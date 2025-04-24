@@ -7,6 +7,23 @@ import librosa
 import requests
 from typing import List, Tuple, Dict, Optional, Any
 from pathlib import Path
+import whisper
+import sys
+
+def _get_correct_path(relative_path):
+    """ Get the absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Not running in PyInstaller bundle, use script's directory
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        # Adjust base_path if your bundled data is relative to the project root, not this file
+        # For example, if this file is in singing_detection/identification and data is at root level:
+        # base_path = os.path.dirname(os.path.dirname(os.path.dirname(base_path)))
+
+
+    return os.path.join(base_path, relative_path)
 
 class SongIdentifier:
     """Class for identifying songs from audio segments using Whisper and Gemini."""
@@ -27,17 +44,19 @@ class SongIdentifier:
         """
         self.audio_path = audio_path
         self.output_dir = output_dir or tempfile.gettempdir()
-        self.whisper_model = whisper_model
+        self.whisper_model_name = whisper_model
         self.gemini_api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
         
         # Create output directory if it doesn't exist
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir, exist_ok=True)
+        
+        self.whisper_model = self._load_whisper_model()
     
     def identify_songs(self, 
                       segments: List[Tuple[float, float]], 
                       min_segment_duration: float = 30.0,
-                      max_segment_duration: float = 90.0,
+                      max_segment_duration: float = 30.0,
                       verbose: bool = True) -> List[Dict[str, Any]]:
         """
         Identify songs for each segment.
@@ -83,7 +102,7 @@ class SongIdentifier:
             
             # Transcribe with Whisper
             if verbose:
-                print(f"  Transcribing with Whisper (model: {self.whisper_model})...")
+                print(f"  Transcribing with Whisper (model: {self.whisper_model_name})...")
             
             transcript = self._transcribe_with_whisper(segment_path)
             if not transcript:
@@ -167,19 +186,11 @@ class SongIdentifier:
             Transcription text, or None if transcription failed
         """
         try:
-            import whisper
-        except ImportError:
-            raise ImportError("Whisper is required for transcription. Install with: pip install openai-whisper")
-        
-        try:
             # Load audio
-            audio = whisper.load_audio(audio_path)
-            
-            # Load model
-            model = whisper.load_model(self.whisper_model)
+            audio = self.whisper_model.load_audio(audio_path)
             
             # Transcribe
-            result = model.transcribe(audio)
+            result = self.whisper_model.transcribe(audio)
             
             # Return transcription
             return result["text"].strip()
@@ -424,4 +435,37 @@ class SongIdentifier:
         if hours > 0:
             return f"{hours}:{minutes:02d}:{secs:02d}"
         else:
-            return f"{minutes}:{secs:02d}" 
+            return f"{minutes}:{secs:02d}"
+    
+    def _load_whisper_model(self):
+        """Loads the whisper model, checking for bundled version first."""
+        model_name = self.whisper_model_name
+        bundled_model_dir = None
+
+        # Check if running as a PyInstaller bundle
+        if getattr(sys, 'frozen', False):
+             # Path relative to the executable where we told PyInstaller to put models
+             # This matches the destination in --add-data "...;whisper_models"
+             bundled_model_dir = _get_correct_path("whisper_models")
+             print(f"Running in bundle, checking for models in: {bundled_model_dir}")
+             # Check if the specific model file exists
+             expected_model_file = os.path.join(bundled_model_dir, f"{model_name}.pt")
+             if not os.path.exists(expected_model_file):
+                  print(f"Warning: Bundled model file not found at {expected_model_file}")
+                  bundled_model_dir = None # Fallback to default download/cache
+        else:
+             print("Not running in bundle, using default Whisper model loading.")
+
+
+        try:
+            # If bundled path exists, tell whisper to use it, otherwise use default cache
+            model_root = bundled_model_dir if bundled_model_dir else None # whisper uses default if None
+            print(f"Loading Whisper model '{model_name}' with download_root='{model_root}'")
+            # Note: Whisper's load_model might not directly accept a full file path,
+            # it usually expects a directory where it can find model_name.pt.
+            # Setting download_root tells it *where* to look or download *to*.
+            return whisper.load_model(model_name, download_root=model_root)
+        except Exception as e:
+            print(f"Error loading Whisper model: {e}")
+            # Handle error appropriately, maybe raise it or return None
+            raise 
