@@ -9,4 +9,4 @@ openai-whisper
 requests
 yt-dlp
 ffmpeg-python
-# Add any other direct dependencies if you have them
+ipython
