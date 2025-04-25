@@ -17,6 +17,9 @@ DEFAULT_CONFIG = {
     'dim_reduction': 'pca',
     'n_components': 4,
 
+    # Feature Extraction
+    'enable_hpss': True,          # Enable Harmonic-Percussive Source Separation
+
     # Identification Parameters
     'min_duration_for_id': 30.0, # Min duration of a segment to attempt identification
     'whisper_model': 'base',     # Whisper model size

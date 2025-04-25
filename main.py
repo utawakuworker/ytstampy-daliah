@@ -10,52 +10,119 @@ if current_dir not in sys.path:
 try:
     from gui.app_view import AppView
     from viewmodel.analysis_viewmodel import AnalysisViewModel
+    from gui.localization import LocalizationManager
 except ImportError as e:
-     print(f"Error importing View/ViewModel in main.py: {e}")
+     print(f"Error importing View/ViewModel/Localization in main.py: {e}")
      print("Ensure gui/ and viewmodel/ packages are correctly structured.")
      sys.exit(1)
 
+# --- Initialize Localization (remains global or in scope) ---
+print("Initializing LocalizationManager...")
+loc_manager = LocalizationManager(locales_dir="locales", default_lang="en")
+print(f"LocalizationManager initialized. Current lang: {loc_manager.get_current_language()}")
+available_langs = loc_manager.get_available_languages()
+print(f"Available languages found: {available_langs}")
+
 def run_app(page: ft.Page):
     """Configures and runs the Flet application."""
+    print("--- run_app called ---")
 
-    # --- Define the callback for the ViewModel ---
-    # This function will be called by the ViewModel to trigger UI updates.
-    # In Flet, the most straightforward way is often to just call page.update()
-    # after the AppView's internal update method runs.
-    # So, we pass AppView's update method itself, or a wrapper.
-    # We'll instantiate AppView first, then pass its update method.
+    # --- Theme Check (Comment out if you have custom themes) ---
+    # page.theme_mode = ft.ThemeMode.LIGHT # Or DARK / SYSTEM
+    # page.theme = ft.Theme(...)
+    # page.dark_theme = ft.Theme(...)
+    # --- End Theme Check ---
 
-    app_view_instance = None # Placeholder
+    # --- Keep ViewModel instance persistent within run_app scope ---
+    # Pass a lambda that calls page.update directly for simplicity here.
+    # The view_model's callback will be properly assigned within build_and_set_view
+    view_model = AnalysisViewModel(view_update_callback=lambda: page.update())
+    print("ViewModel created.")
 
-    def trigger_view_update():
-        """Callback function passed to ViewModel."""
-        if app_view_instance:
-            # The AppView's update_view_state method should handle
-            # updating controls and calling page.update() itself.
-            app_view_instance.update_view_state()
+    # --- Language Change Handler ---
+    def change_language(e):
+        selected_lang = e.control.value
+        print(f"--- change_language called: {selected_lang} ---")
+        loc_manager.set_language(selected_lang)
+        build_and_set_view()
+        # Ensure dropdown visually updates if fallback occurred in set_language
+        # This assumes lang_dropdown is accessible here.
+        # Check if the manager's current lang differs from selection after potential fallback
+        if lang_dropdown.value != loc_manager.get_current_language():
+             lang_dropdown.value = loc_manager.get_current_language()
+             print(f"Dropdown value reset to {lang_dropdown.value} after potential fallback.")
+        page.update()
+        print("--- change_language finished ---")
+
+    # --- Language Dropdown Definition ---
+    # Moved definition inside run_app to ensure it's recreated if needed,
+    # though currently it's only created once.
+    lang_dropdown = ft.Dropdown(
+        value=loc_manager.get_current_language(), # Set initial value
+        options=[
+            ft.dropdown.Option(lang)
+            for lang in loc_manager.get_available_languages() # Get available languages
+        ],
+        on_change=change_language,
+        width=100,
+        tooltip="Select Language" # Add key: "select_language_tooltip"
+    )
+    print(f"lang_dropdown defined. Options count: {len(lang_dropdown.options)}")
+
+    # --- App Bar Definition and ASSIGNMENT ---
+    # This line assigns the created AppBar to the page's appbar property.
+    # It MUST be executed for the AppBar to appear.
+    page.appbar = ft.AppBar(
+        title=ft.Text(loc_manager.tr("app_title")), # Use initial language for title
+        actions=[lang_dropdown], # Add the dropdown to the AppBar
+        # Optional: Force a visible background color for testing
+        # bgcolor=ft.colors.SURFACE_VARIANT
+    )
+    print(f"AppBar assigned. Actions count: {len(page.appbar.actions)}")
+
+    # ---> Explicit Update after AppBar assignment <---
+    print("Attempting explicit page update after AppBar assignment...")
+    page.update()
+    print("Explicit update called.")
+
+    # --- Function to build/rebuild the main AppView ---
+    def build_and_set_view():
+        # Get the current translator function from the manager
+        current_tr = loc_manager.tr
+        print(f"--- build_and_set_view called (Lang: {loc_manager.get_current_language()}) ---")
+        print(f"Building view with language: {loc_manager.get_current_language()}") # Debug print
+        # Create the AppView instance
+        app_view_instance = AppView(view_model=view_model, tr=current_tr)
+        # Assign the view's update method to the view model's callback
+        # This links the ViewModel back to the *current* view instance
+        view_model.view_update_callback = app_view_instance.update_view_state
+
+        # Update page content (replace views)
+        page.views.clear()
+        page.views.append(app_view_instance)
+
+        # Update page title in the existing AppBar
+        if page.appbar and page.appbar.title:
+             page.appbar.title.value = current_tr("app_title")
+             print("AppBar title updated.")
         else:
-            # Fallback if called before view is ready (shouldn't happen often)
-            page.update()
+             print("Cannot update AppBar title - AppBar or title is None.")
+        print("--- build_and_set_view finished ---")
 
+    # --- Initial View Setup ---
+    build_and_set_view() # Call it once to build the initial view
 
-    # 1. Create ViewModel instance
-    view_model = AnalysisViewModel(view_update_callback=trigger_view_update)
-
-    # 2. Create View instance, passing the ViewModel
-    app_view_instance = AppView(view_model) # Now we have the instance
-
-    # 3. Add the main view control to the page
-    page.add(app_view_instance)
-
-    # Initial page setup
-    page.title = "Singing Analysis Tool"
+    # --- Page Settings ---
     page.vertical_alignment = ft.MainAxisAlignment.START
-    page.window_width = 850 # Adjusted size
-    page.window_height = 750
-    page.update() # Initial render
+    page.window_width = 600
+    page.window_height = 1000
+    print("Page settings applied. Calling final page.update()...")
+    page.update() # Final initial render
+    print("--- run_app finished ---")
 
 if __name__ == "__main__":
     # Set environment variable for API key (example - better to set externally)
     # os.environ['GEMINI_API_KEY'] = 'YOUR_ACTUAL_API_KEY'
 
+    print("Starting Flet app...")
     ft.app(target=run_app) 

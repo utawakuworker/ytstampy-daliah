@@ -202,17 +202,24 @@ class FeatureExtractorFacade:
     Delegates to specialized feature extractors.
     """
     
-    def __init__(self, include_pitch=True, frame_length=None, hop_length=None, window_size_seconds=1.0):
+    def __init__(self, 
+                 include_pitch=True, 
+                 enable_hpss=True,
+                 frame_length=None, 
+                 hop_length=None, 
+                 window_size_seconds=1.0):
         """
         Initialize the feature extractor facade.
         
         Args:
             include_pitch: Whether to include pitch-related features
+            enable_hpss: Whether to include harmonic features (requires HPSS)
             frame_length: Frame length for feature extraction (if None, calculated from window_size_seconds)
             hop_length: Hop length for feature extraction (if None, calculated as half the frame_length)
             window_size_seconds: Window size in seconds (default: 1.0)
         """
         self.include_pitch = include_pitch
+        self.enable_hpss = enable_hpss
         self.window_size_seconds = window_size_seconds
         self.frame_length = frame_length
         self.hop_length = hop_length
@@ -246,8 +253,14 @@ class FeatureExtractorFacade:
         self.extractors = [
             SpectralFeatureExtractor(self.frame_length, self.hop_length),
             MFCCFeatureExtractor(self.frame_length, self.hop_length),
-            HarmonicFeatureExtractor(self.frame_length, self.hop_length)
         ]
+        
+        # Conditionally add HarmonicFeatureExtractor
+        if self.enable_hpss:
+            print("HPSS enabled, adding HarmonicFeatureExtractor.")
+            self.extractors.append(HarmonicFeatureExtractor(self.frame_length, self.hop_length))
+        else:
+            print("HPSS disabled, skipping HarmonicFeatureExtractor.")
         
         if self.include_pitch:
             self.extractors.append(PitchFeatureExtractor(self.frame_length, self.hop_length))
