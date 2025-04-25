@@ -1,11 +1,28 @@
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
+# Try importing visualization libraries and set flags
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.animation as animation
+    from matplotlib.patches import Rectangle
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    plt = None
+    animation = None
+    Rectangle = None
+    MATPLOTLIB_AVAILABLE = False
+    print("Warning: Matplotlib not found. Plotting functions will be disabled.")
+
+try:
+    from IPython.display import HTML
+    IPYTHON_AVAILABLE = True
+except ImportError:
+    HTML = None
+    IPYTHON_AVAILABLE = False
+    print("Warning: IPython not found. Animation display might not work as expected.")
+
 import librosa
 import librosa.display
 import pandas as pd
-from matplotlib.patches import Rectangle
-from IPython.display import HTML
 
 def plot_waveform_with_segments(y, sr, segments, title="Detected Singing Segments", 
                                reference_segments=None, figsize=(14, 6)):
@@ -20,6 +37,10 @@ def plot_waveform_with_segments(y, sr, segments, title="Detected Singing Segment
         reference_segments: Optional dictionary of reference segments
         figsize: Figure size
     """
+    if not MATPLOTLIB_AVAILABLE:
+        print("Matplotlib not available. Skipping plot_waveform_with_segments.")
+        return
+
     plt.figure(figsize=figsize)
     
     # Plot waveform
@@ -67,6 +88,10 @@ def plot_segmentation_results(results, audio_data=None, sr=None, figsize=(14, 8)
         sr: Sample rate for audio
         figsize: Figure size
     """
+    if not MATPLOTLIB_AVAILABLE:
+        print("Matplotlib not available. Skipping plot_segmentation_results.")
+        return
+
     # Extract data from results
     segments = results.get('segments', [])
     method_used = results.get('method_used', 'unknown')
@@ -139,6 +164,10 @@ def plot_feature_comparison(frame_df, segments=None, features=None, figsize=(14,
         features: List of feature column names to plot
         figsize: Figure size
     """
+    if not MATPLOTLIB_AVAILABLE:
+        print("Matplotlib not available. Skipping plot_feature_comparison.")
+        return
+
     if features is None:
         # Default features to plot
         features = [
@@ -185,6 +214,10 @@ def plot_singing_score_distribution(frame_df, segments=None, score_column='singi
         score_column: Column name for the singing score
         figsize: Figure size
     """
+    if not MATPLOTLIB_AVAILABLE:
+        print("Matplotlib not available. Skipping plot_singing_score_distribution.")
+        return
+
     if score_column not in frame_df.columns:
         print(f"Error: '{score_column}' column not found in DataFrame.")
         return
@@ -240,8 +273,12 @@ def animate_detection_process(frame_df, threshold=0.6, figsize=(14, 7), interval
         interval: Animation interval in milliseconds
         
     Returns:
-        HTML: Animation for display in notebook
+        HTML: Animation for display in notebook (if IPython is available), or None.
     """
+    if not MATPLOTLIB_AVAILABLE or not IPYTHON_AVAILABLE or animation is None or HTML is None:
+        print("Matplotlib or IPython not available. Skipping animate_detection_process.")
+        return None # Return None if dependencies are missing
+
     # Get data for animation
     times = frame_df['time'].values
     
@@ -303,5 +340,6 @@ def animate_detection_process(frame_df, threshold=0.6, figsize=(14, 7), interval
     anim = animation.FuncAnimation(fig, animate, frames=len(times), 
                                  interval=interval, blit=True)
     
-    plt.close()  # Prevent duplicate display
-    return HTML(anim.to_jshtml()) 
+    plt.close(fig) # Close the figure to prevent double display
+    
+    return HTML(anim.to_jshtml()) # Use IPython.display.HTML 

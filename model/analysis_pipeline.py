@@ -401,59 +401,59 @@ class SingingAnalysisPipeline:
         return final_results # Return the dataclass instance
 
     def visualize(self):
-        """Generates and saves visualizations based on results."""
-        # Import matplotlib only when needed and handle if it's missing
+        """Generates and shows visualizations (if matplotlib is installed)."""
+        if not self.results.get('y') is not None or self.results.get('sr') is None:
+            self._update_status("Cannot visualize: Audio data not loaded.")
+            return
+
+        processed_segments = self.results.get('processed_segments')
+        feature_df = self.results.get('frame_df_with_states') # Use the df with state info
+        y = self.results['y']
+        sr = self.results['sr']
+
+        if processed_segments is None or feature_df is None:
+            self._update_status("Cannot visualize: Segments or features not available.")
+            return
+
+        self._update_status("Generating visualizations...")
+
         try:
+            # Import matplotlib only when needed and handle if it's missing
             import matplotlib.pyplot as plt
+            from singing_detection.visualization.plots import plot_waveform_with_segments, plot_feature_comparison
+
+            # Generate Waveform Plot
+            try:
+                self._update_status("Plotting waveform with segments...")
+                plot_waveform_with_segments(y, sr, processed_segments,
+                                            title=f"Detected Segments - {self.results.get('base_filename', 'Analysis')}")
+                # Optional: Save plot
+                # base_filename = self.results.get('base_filename', 'waveform_plot')
+                # plt.savefig(os.path.join(self.run_output_dir, f"{base_filename}_waveform.png"))
+                # plt.close() # Close plot if saving to file to prevent display
+            except Exception as e:
+                self._update_status(f"Error generating waveform plot: {e}")
+
+            # Generate Feature Comparison Plot
+            try:
+                self._update_status("Plotting feature comparison...")
+                plot_feature_comparison(feature_df, processed_segments,
+                                        features=['rms_mean', 'harmonic_ratio_mean', 'singing_probability', 'hmm_state']) # Add hmm_state
+                # Optional: Save plot
+                # base_filename = self.results.get('base_filename', 'feature_plot')
+                # plt.savefig(os.path.join(self.run_output_dir, f"{base_filename}_features.png"))
+                # plt.close()
+            except Exception as e:
+                self._update_status(f"Error generating feature plot: {e}")
+
+            self._update_status("Visualization complete.")
+
         except ImportError:
-            self._update_status("Visualization skipped: matplotlib library not found or excluded.")
-            # Don't consider this a failure of the pipeline, just skip visualization
-            return
-
-        # Check if visualization is enabled in config
-        if not self.config.get('visualize', False):
-            self._update_status("Visualization disabled in config.")
-            return
-
-        # Check if necessary data exists
-        if 'y' not in self.results or 'final_segments' not in self.results:
-             self._update_status("Cannot visualize: Missing audio data or segments.")
-             return
-
-        base_filename = self.results.get('base_filename', 'analysis_plot')
-        self._update_status(f"Generating visualization files for {base_filename}...")
-        try:
-            fig1_path = os.path.join(self.run_output_dir, f"{base_filename}_waveform_segments.png")
-            # Get the List[Segment] and convert back to tuples for the plotting function
-            final_segment_objects: List[Segment] = self.results.get('final_segments', [])
-            segment_tuples_for_plot = [(seg.start, seg.end) for seg in final_segment_objects]
-
-            # Create and save the first plot (waveform)
-            plt.figure(figsize=(15, 5))
-            plot_waveform_with_segments(
-                y=self.results.get('y'),
-                sr=self.results.get('sr'),
-                segments=segment_tuples_for_plot, # Pass tuples
-                title=f"Detected Singing Segments - {base_filename}",
-                # Pass output_path directly to the function if it supports it
-                # otherwise, save manually after plotting
-            )
-            plt.savefig(fig1_path)
-            plt.close()
-            self._update_status(f"Saved waveform plot: {fig1_path}")
-
-            # Create and save the second plot (features) if available
-            if 'frame_df_with_states' in self.results and not self.results['frame_df_with_states'].empty:
-                fig2_path = os.path.join(self.run_output_dir, f"{base_filename}_feature_comparison.png")
-                plt.figure(figsize=(15, 7))
-                plot_feature_comparison(self.results['frame_df_with_states'], title=f"Feature Comparison ({base_filename})")
-                plt.savefig(fig2_path)
-                plt.close()
-                self._update_status(f"Saved feature plot: {fig2_path}")
-        except Exception as e: # Catch potential errors during plotting/saving
-            self._update_status(f"Error generating visualization files: {e}")
+            self._update_status("Visualization skipped: matplotlib library not found or could not be imported.")
+        except Exception as e:
+            self._update_status(f"An unexpected error occurred during visualization: {e}")
             import traceback
-            print(traceback.format_exc())
+            print(traceback.format_exc()) # Log detailed error
 
     def save_results(self):
         """Saves the analysis results to files."""

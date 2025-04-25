@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt # Removed top-level import
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from hmmlearn import hmm
@@ -859,115 +859,83 @@ class ClusterEnhancedHMMDetectionEngine(HMMDetectionEngine):
                                       singing_ref: Tuple[float, float] = None,
                                       non_singing_ref: Tuple[float, float] = None,
                                       evaluated_segments: List[Tuple[float, float, float]] = None) -> None:
-        """Visualize the cluster-enhanced HMM results."""
-        import matplotlib.pyplot as plt
-        
-        plt.figure(figsize=(15, 10))
-        
-        # Plot 1: Cluster assignments
-        plt.subplot(3, 1, 1)
-        
-        # Use actual cluster values
-        unique_clusters = np.unique(cluster_labels)
-        scatter = plt.scatter(times, cluster_labels, c=cluster_labels, cmap='viridis', 
-                    alpha=0.6, s=5)
-        
-        # Highlight reference segments if provided
-        if singing_ref:
-            sing_start, sing_end = singing_ref
-            plt.axvspan(sing_start, sing_end, color='green', alpha=0.2, label='Singing Ref')
-        
-        if non_singing_ref:
-            non_sing_start, non_sing_end = non_singing_ref
-            plt.axvspan(non_sing_start, non_sing_end, color='red', alpha=0.2, label='Non-Singing Ref')
-        
-        # Calculate cluster singing probabilities
-        if singing_ref and non_singing_ref:
-            singing_ref_mask = (times >= singing_ref[0]) & (times <= singing_ref[1])
-            non_singing_ref_mask = (times >= non_singing_ref[0]) & (times <= non_singing_ref[1])
-            
-            # Add cluster singing probabilities as text
-            for cluster_id in unique_clusters:
-                # Count occurrences in reference segments
-                if np.sum(singing_ref_mask) > 0 and np.sum(non_singing_ref_mask) > 0:
-                    cluster_in_singing = np.sum(cluster_labels[singing_ref_mask] == cluster_id) / np.sum(singing_ref_mask)
-                    cluster_in_non_singing = np.sum(cluster_labels[non_singing_ref_mask] == cluster_id) / np.sum(non_singing_ref_mask)
-                    
-                    # Display ratio of singing to non-singing
-                    ratio = cluster_in_singing / (cluster_in_non_singing + 0.001)
-                    
-                    # Find a reasonable position for the text
-                    center_idx = len(times) // 2
-                    if center_idx < len(times):
-                        plt.text(times[center_idx], cluster_id, f"{ratio:.2f}", 
-                                fontsize=9, ha='center', va='center',
-                                bbox=dict(facecolor='white', alpha=0.7))
-        
-        plt.title("Cluster Assignments and Singing Probabilities")
-        plt.ylabel("Cluster ID")
-        plt.ylim(min(unique_clusters)-0.5, max(unique_clusters)+0.5)
-        plt.legend()
-        
-        # Plot 2: HMM state assignments
-        plt.subplot(3, 1, 2)
-        
-        # Since we don't have a single singing state anymore, just plot the states
-        unique_states = np.unique(states)
-        plt.scatter(times, states, c=states, cmap='coolwarm', alpha=0.6, s=5)
-        
-        # Highlight reference segments again
-        if singing_ref:
-            plt.axvspan(singing_ref[0], singing_ref[1], color='green', alpha=0.2, label='Singing Ref')
-        
-        if non_singing_ref:
-            plt.axvspan(non_singing_ref[0], non_singing_ref[1], color='red', alpha=0.2, label='Non-Singing Ref')
-        
-        plt.title("HMM State Assignments")
-        plt.ylabel("State")
-        plt.yticks(unique_states, [f"State {int(s)}" for s in unique_states])
-        plt.legend()
-        
-        # Plot 3: Singing probabilities and detected segments
-        plt.subplot(3, 1, 3)
-        
-        # Plot singing probabilities if available
+        """
+        Visualizes the results of the cluster-enhanced HMM.
+        Includes cluster labels, HMM states, detected segments, and reference segments.
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            if verbose:
+                print("Matplotlib not available. Skipping visualization.")
+            return
+
+        if verbose:
+            print("Generating visualization...")
+
+        # Determine number of subplots based on available data
+        num_subplots = 3
+        if 'singing_probability' not in features_df.columns and evaluated_segments is None:
+            num_subplots -= 1
+
+        fig, axes = plt.subplots(num_subplots, 1, figsize=(15, 10), sharex=True)
+
+        # Plot Cluster Labels
+        axes[0].scatter(times, cluster_labels, c=cluster_labels, cmap='viridis', alpha=0.6, s=5)
+        axes[0].set_title("Cluster Labels")
+        axes[0].set_ylabel("Cluster ID")
+        axes[0].set_ylim(min(np.unique(cluster_labels))-0.5, max(np.unique(cluster_labels))+0.5)
+        axes[0].grid(True, axis='y', linestyle='--')
+
+        # Plot HMM States
+        axes[1].scatter(times, states, c=states, cmap='coolwarm', alpha=0.6, s=5)
+        axes[1].set_title("HMM States")
+        axes[1].set_ylabel("HMM State")
+        axes[1].set_yticks([0, 1])
+        axes[1].set_yticklabels(['State 0', 'State 1'])
+        axes[1].set_ylim(-0.5, 1.5)
+        axes[1].grid(True, axis='y', linestyle='--')
+
+        # Plot Segment Scores (if available)
         if 'singing_probability' in features_df.columns:
-            plt.plot(times, features_df['singing_probability'], alpha=0.6, color='gray')
-            plt.ylabel('Singing Probability')
+            axes[2].plot(times, features_df['singing_probability'], alpha=0.6, color='gray')
+            axes[2].set_title("Segment Scores")
+            axes[2].set_ylabel("Segment Score")
+            axes[2].set_ylim(0, 1.1)
+            axes[2].grid(True, axis='y', linestyle='--')
         elif evaluated_segments:
             # Construct probability line from evaluated segments
             probs = np.zeros_like(times)
             for start, end, prob in evaluated_segments:
                 segment_mask = (times >= start) & (times <= end)
                 probs[segment_mask] = prob
-            plt.plot(times, probs, alpha=0.6, color='gray')
-            plt.ylabel('Singing Probability')
-        else:
-            # Plot a relevant feature as fallback
-            if 'harmonic_ratio_mean' in features_df.columns:
-                plt.plot(times, features_df['harmonic_ratio_mean'], alpha=0.6, color='gray')
-                plt.ylabel('Harmonic Ratio')
-            elif 'rms_mean' in features_df.columns:
-                plt.plot(times, features_df['rms_mean'], alpha=0.6, color='gray')
-                plt.ylabel('RMS Energy')
-            else:
-                plt.plot(times, np.zeros_like(times), alpha=0.6, color='gray')
-        
-        # Highlight reference segments once more
+            axes[2].plot(times, probs, alpha=0.6, color='gray')
+            axes[2].set_title("Segment Scores")
+            axes[2].set_ylabel("Segment Score")
+            axes[2].set_ylim(0, 1.1)
+            axes[2].grid(True, axis='y', linestyle='--')
+
+        # Highlight reference segments
         if singing_ref:
-            plt.axvspan(singing_ref[0], singing_ref[1], color='green', alpha=0.2, label='Singing Ref')
-        
+            for ax in axes:
+                ax.axvspan(singing_ref[0], singing_ref[1], color='green', alpha=0.2, label='Singing Ref')
         if non_singing_ref:
-            plt.axvspan(non_singing_ref[0], non_singing_ref[1], color='red', alpha=0.2, label='Non-Singing Ref')
-        
+            for ax in axes:
+                ax.axvspan(non_singing_ref[0], non_singing_ref[1], color='red', alpha=0.2, label='Non-Singing Ref')
+
         # Highlight detected segments
-        for start, end in segments:
-            plt.axvspan(start, end, color='blue', alpha=0.2)
-            plt.text((start + end) / 2, 0.8, f"{end-start:.1f}s", 
-                    ha='center', fontsize=8,
-                    bbox=dict(facecolor='white', alpha=0.7))
-        
-        plt.title("Detected Singing Segments")
-        plt.xlabel("Time (s)")
-        plt.tight_layout()
+        for ax in axes:
+            for start, end in segments:
+                ax.axvspan(start, end, color='blue', alpha=0.2)
+                ax.text((start + end) / 2, 0.8, f"{end-start:.1f}s", 
+                        ha='center', fontsize=8,
+                        bbox=dict(facecolor='white', alpha=0.7))
+
+        # Final adjustments
+        show_legend = singing_ref or non_singing_ref
+        if show_legend:
+            axes[0].legend()
+        axes[-1].set_xlabel("Time (s)")
+        plt.suptitle("Cluster-Enhanced HMM Results", fontsize=16)
+        plt.tight_layout(rect=[0, 0.03, 1, 0.97]) # Adjust layout for suptitle
         plt.show()

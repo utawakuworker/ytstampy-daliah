@@ -1,11 +1,8 @@
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt # Removed unused import
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Dict, Optional, Any, Union
-import librosa
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans, DBSCAN
+from sklearn.cluster import KMeans
 
 # Try to import UMAP, but make it optional
 try:
