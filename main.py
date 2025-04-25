@@ -121,8 +121,6 @@ def run_app(page: ft.Page):
     print("--- run_app finished ---")
 
 if __name__ == "__main__":
-    # Set environment variable for API key (example - better to set externally)
-    # os.environ['GEMINI_API_KEY'] = 'YOUR_ACTUAL_API_KEY'
 
     print("Starting Flet app...")
     ft.app(target=run_app) 

@@ -1,12 +1,9 @@
 flet
-pyinstaller
 pandas
-matplotlib # Needed for pipeline visualization (plots), exclude from GUI build via PyInstaller flag
-librosa # Needed for feature extraction?
+librosa 
 scikit-learn
 hmmlearn
 openai-whisper
-requests # Potentially used by audio loader or other parts
+requests
 yt-dlp
 ffmpeg-python
-ipython # Primarily for notebook development, optional for built app

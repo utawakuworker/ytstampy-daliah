@@ -1,0 +1,90 @@
+name: Build Python Executable with Nuitka
+
+on:
+  push:
+    branches: [ "main" ] # Trigger on push to the main branch
+    # Optional: Only trigger if relevant files change
+    # paths:
+    #  - 'your_app_directory/**' # Specify your app directory if not root
+    #  - '.github/workflows/build-windows-nuitka.yml'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    runs-on: windows-latest # Use the latest Windows runner
+
+    steps:
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' # Choose the Python version you use
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # Install FFmpeg using Chocolatey
+    - name: Install Chocolatey and FFmpeg
+      uses: crazy-max/ghaction-chocolatey@v3
+      with:
+        # Installs ffmpeg system-wide on the runner
+        args: install ffmpeg -y --no-progress
+
+    - name: Build with Nuitka
+      uses: Nuitka/Nuitka-Action@v1.2
+      with:
+        # --- Basic Setup ---
+        # Script name relative to the repo root
+        # *** Verify this path is correct for your project ***
+        script-name: main.py
+
+        # --- Packaging Options ---
+        standalone: true
+        # Start with onefile: false (folder output) for easier debugging!
+        # Change to true later if needed and everything works.
+        onefile: false
+
+        # --- Include Modules ---
+        include-module: pandas # Force inclusion of pandas
+
+        # --- Include Data Files/Dirs ---
+        # Include 'locales' directory. Assumes 'locales' is in the repo root.
+        # *** Verify this path is correct *** Source path relative to repo root.
+        include-data-dir: locales=locales
+
+        # Include ffmpeg.exe from the standard Chocolatey install path
+        # Source path is absolute, Destination path is relative to final .dist folder.
+        # This path might be fragile if choco changes defaults.
+        include-data-files: |
+          C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe=ffmpeg.exe
+
+        # --- Output ---
+        # Output directory relative to repository root
+        output-dir: build
+
+        # --- Nuitka Plugins ---
+        enable-plugins: numpy # Essential for pandas and scientific stack
+
+    - name: Verify inclusions (Optional Debug Step)
+      # Check if key files exist in the output directory (build\main.dist for standalone)
+      run: |
+        echo "--- Verifying build output in build\\main.dist ---"
+        echo "Checking for ffmpeg.exe:"
+        dir build\\main.dist\\ffmpeg.exe /s /b || echo "WARNING: ffmpeg.exe not found!"
+        echo "Checking for pandas directory:"
+        dir build\\main.dist\\pandas /s /b || echo "WARNING: pandas module not found!"
+        echo "Checking for locales directory:"
+        dir build\\main.dist\\locales /s /b || echo "WARNING: locales directory not found!"
+      shell: cmd
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ytstampy-executable-windows-standalone # Updated name
+        # Path relative to repo root - upload the folder created by standalone=true, onefile=false
+        path: build/main.dist/
+        if-no-files-found: error # Fail the workflow if the build output is not found 
