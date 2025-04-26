@@ -9,6 +9,25 @@ from pathlib import Path
 import whisper
 import sys
 
+# --- Import Data Models ---
+# Assuming model is a sibling directory to singing_detection parent
+try:
+    # Adjust relative path based on your project structure
+    # If song_identifier.py is in singing_detection/identification/
+    # and data_models.py is in model/
+    # We need to go up two levels then into model
+    from ...model.data_models import Segment, SegmentIdentification, SongIdentificationResult
+except ImportError:
+    # Fallback if the relative import fails (e.g., running script directly)
+    # This might require adding the project root to PYTHONPATH
+    print("Warning: Relative import failed. Attempting direct import of data_models.")
+    try:
+        from model.data_models import Segment, SegmentIdentification, SongIdentificationResult
+    except ImportError as e:
+        print(f"Error: Could not import data models: {e}. Ensure 'model' is accessible.")
+        # Decide how critical this is. Maybe raise the error or exit.
+        sys.exit(1) # Or raise e
+
 def _get_correct_path(relative_path):
     """ Get the absolute path to resource, works for dev and for PyInstaller """
     try:
@@ -53,26 +72,28 @@ class SongIdentifier:
         self.whisper_model = self._load_whisper_model()
     
     def identify_songs(self, 
-                      segments: List[Tuple[float, float]], 
+                      segments: List[Segment], 
                       min_segment_duration: float = 30.0,
                       max_segment_duration: float = 30.0,
-                      verbose: bool = True) -> List[Dict[str, Any]]:
+                      verbose: bool = True) -> List[SegmentIdentification]:
         """
         Identify songs for each segment.
         
         Args:
-            segments: List of (start, end) timestamp tuples
+            segments: List of Segment objects
             min_segment_duration: Minimum duration for analysis
             max_segment_duration: Maximum duration for analysis
             verbose: Whether to print status
             
         Returns:
-            List of dictionaries with identification results
+            List of SegmentIdentification objects with results
         """
-        results = []
+        results: List[SegmentIdentification] = []
         
-        for i, (start, end) in enumerate(segments):
-            segment_duration = end - start
+        for i, segment in enumerate(segments):
+            segment_duration = segment.duration
+            start_time = segment.start
+            end_time = segment.end
             
             # Skip segments that are too short
             if segment_duration < min_segment_duration:
@@ -81,22 +102,31 @@ class SongIdentifier:
                 continue
             
             if verbose:
-                print(f"Processing segment {i+1}: {start:.1f}s - {end:.1f}s (duration: {segment_duration:.1f}s)")
+                print(f"Processing segment {i+1}: {start_time:.1f}s - {end_time:.1f}s (duration: {segment_duration:.1f}s)")
+            
+            # Define extraction times (may be modified if segment is too long)
+            extract_start = start_time
+            extract_end = end_time
             
             # Extract audio segment
             if segment_duration > max_segment_duration:
                 # If segment is too long, use the middle portion
-                center = (start + end) / 2
-                start = center - (max_segment_duration / 2)
-                end = center + (max_segment_duration / 2)
+                center = (start_time + end_time) / 2
+                extract_start = center - (max_segment_duration / 2)
+                extract_end = center + (max_segment_duration / 2)
                 if verbose:
-                    print(f"  Trimming segment to {start:.1f}s - {end:.1f}s ({max_segment_duration:.1f}s)")
+                    print(f"  Trimming segment for analysis to {extract_start:.1f}s - {extract_end:.1f}s ({max_segment_duration:.1f}s)")
             
-            # Extract the segment
-            segment_path = self._extract_segment(start, end)
+            # Extract the segment using potentially modified times
+            segment_path = self._extract_segment(extract_start, extract_end)
+            identification_result: Optional[SongIdentificationResult] = None
+            transcript: Optional[str] = None
+            
             if not segment_path:
                 if verbose:
                     print(f"  Failed to extract segment")
+                identification_result = SongIdentificationResult(error="Failed to extract audio segment")
+                results.append(SegmentIdentification(segment=segment, transcript=transcript, identification=identification_result))
                 continue
             
             # Transcribe with Whisper
@@ -107,6 +137,8 @@ class SongIdentifier:
             if not transcript:
                 if verbose:
                     print(f"  No transcription available")
+                identification_result = SongIdentificationResult(error="Transcription failed or yielded no text")
+                results.append(SegmentIdentification(segment=segment, transcript=transcript, identification=identification_result))
                 continue
             
             if verbose:
@@ -116,20 +148,20 @@ class SongIdentifier:
             if verbose:
                 print(f"  Identifying song with Gemini...")
                 
-            identification_result = self._identify_with_gemini(transcript, start, end)
+            identification_result = self._identify_with_gemini(transcript, start_time, end_time)
             
-            # Store result
-            result = {
-                "segment": (start, end),
-                "duration": end - start,
-                "transcript": transcript,
-                "identification": identification_result
-            }
-            results.append(result)
+            # Store result as SegmentIdentification object
+            results.append(SegmentIdentification(
+                segment=segment,
+                transcript=transcript,
+                identification=identification_result
+            ))
             
             if verbose:
-                if identification_result.get("title"):
-                    print(f"  Identified as: {identification_result.get('title')} by {identification_result.get('artist')}")
+                if identification_result and identification_result.title:
+                    print(f"  Identified as: {identification_result.title} by {identification_result.artist} (Confidence: {identification_result.confidence})")
+                elif identification_result and identification_result.error:
+                    print(f"  Identification error: {identification_result.error}")
                 else:
                     print(f"  Could not identify song")
             
@@ -198,20 +230,21 @@ class SongIdentifier:
     def _identify_with_gemini(self, 
                              transcript: str, 
                              start: float, 
-                             end: float) -> Dict[str, Any]:
+                             end: float) -> SongIdentificationResult:
         """
         Identify song using Gemini API, focusing primarily on title and artist.
         
         Args:
             transcript: Transcribed lyrics
-            start: Start time in seconds
-            end: End time in seconds
+            start: Start time in seconds (for prompt context)
+            end: End time in seconds (for prompt context)
             
         Returns:
-            Dictionary with identification results
+            SongIdentificationResult object
         """
         if not self.gemini_api_key:
-            return {"error": "No Gemini API key provided"}
+            # Return data model object with error
+            return SongIdentificationResult(error="No Gemini API key provided")
         
         try:
             # Format time for better context
@@ -231,34 +264,56 @@ class SongIdentifier:
             3. Confidence level (high, medium, low)
 
             Respond in JSON format with fields: title, artist, confidence, and explanation.
-            If you cannot identify the song with confidence, provide your best guess and mark the confidence as "low".
+            If you cannot identify the song with confidence, provide your best guess and mark the confidence as "low". If you are highly uncertain, return null or empty strings for title and artist.
             """
             
             # Call Gemini API
-            response = self._call_gemini_api(prompt)
+            response_text = self._call_gemini_api(prompt)
+            
+            # Check for API Error response from _call_gemini_api
+            if response_text.startswith("API Error:"):
+                return SongIdentificationResult(error=response_text)
             
             # Parse JSON from response
             try:
                 # Try to find JSON in the response (looking for curly braces)
-                json_start = response.find('{')
-                json_end = response.rfind('}')
+                json_start = response_text.find('{')
+                json_end = response_text.rfind('}')
                 
+                parsed_data: Dict[str, Any] = {}
                 if json_start >= 0 and json_end > json_start:
-                    json_str = response[json_start:json_end+1]
-                    result = json.loads(json_str)
+                    json_str = response_text[json_start:json_end+1]
+                    try:
+                        parsed_data = json.loads(json_str)
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, fall back to unstructured parsing
+                        return self._parse_unstructured_response(response_text)
                 else:
                     # Fall back to simple parsing if JSON is not well-formed
-                    result = self._parse_unstructured_response(response)
+                    return self._parse_unstructured_response(response_text)
                 
-                return result
-                
-            except json.JSONDecodeError:
-                # Fall back to simple parsing
-                return self._parse_unstructured_response(response)
+                # Create SongIdentificationResult from parsed JSON data
+                # Use .get() to handle potentially missing fields gracefully
+                return SongIdentificationResult(
+                    title=parsed_data.get("title"),
+                    artist=parsed_data.get("artist"),
+                    confidence=parsed_data.get("confidence", "low"), # Default to low if missing
+                    explanation=parsed_data.get("explanation", response_text) # Use full text if no specific explanation
+                )
+
+            except Exception as parse_err: # Catch broader errors during parsing/object creation
+                print(f"Error parsing Gemini response or creating result object: {parse_err}")
+                # Return unstructured parse as fallback if JSON handling fails unexpectedly
+                try:
+                    return self._parse_unstructured_response(response_text)
+                except Exception as fallback_err:
+                    print(f"Error during fallback parsing: {fallback_err}")
+                    return SongIdentificationResult(error=f"Failed to parse response: {response_text}", explanation=response_text)
                 
         except Exception as e:
             print(f"Error identifying with Gemini: {e}")
-            return {"error": str(e)}
+            # Return data model object with error
+            return SongIdentificationResult(error=str(e))
     
     def _call_gemini_api(self, prompt: str) -> str:
         """
@@ -338,23 +393,20 @@ class SongIdentifier:
             # Return error message or empty string
             return f"API Error: {response.status_code}"
     
-    def _parse_unstructured_response(self, response: str) -> Dict[str, Any]:
+    def _parse_unstructured_response(self, response: str) -> SongIdentificationResult:
         """
-        Parse an unstructured response to extract song title and artist.
+        Parse an unstructured response to extract song title, artist, and confidence.
         
         Args:
             response: Text response from Gemini
             
         Returns:
-            Dictionary with parsed information
+            SongIdentificationResult object
         """
-        # Initialize result with just title and artist
-        result = {
-            "title": None,
-            "artist": None,
-            "confidence": "low",
-            "explanation": ""
-        }
+        # Initialize fields
+        title: Optional[str] = None
+        artist: Optional[str] = None
+        confidence: str = "low" # Default confidence
         
         # Look for song title
         title_indicators = ["Title:", "Song title:", "Song:", "1."]
@@ -364,12 +416,12 @@ class SongIdentifier:
                 line = next((l for l in response.split('\n') if indicator in l), "")
                 if line:
                     # Extract text after the indicator
-                    title = line.split(indicator)[1].strip()
+                    found_title = line.split(indicator, 1)[1].strip() # Use split with maxsplit=1
                     # Clean up any quotes
-                    title = title.strip('"\'')
-                    if title:
-                        result["title"] = title
-                        break
+                    found_title = found_title.strip('"\'')
+                    if found_title:
+                        title = found_title
+                        break # Found title, stop searching
         
         # Look for artist
         artist_indicators = ["Artist:", "Band:", "By:", "2."]
@@ -379,12 +431,12 @@ class SongIdentifier:
                 line = next((l for l in response.split('\n') if indicator in l), "")
                 if line:
                     # Extract text after the indicator
-                    artist = line.split(indicator)[1].strip()
+                    found_artist = line.split(indicator, 1)[1].strip() # Use split with maxsplit=1
                     # Clean up any quotes
-                    artist = artist.strip('"\'')
-                    if artist:
-                        result["artist"] = artist
-                        break
+                    found_artist = found_artist.strip('"\'')
+                    if found_artist:
+                        artist = found_artist
+                        break # Found artist, stop searching
         
         # Look for confidence
         confidence_indicators = ["Confidence:", "Confidence level:", "3."]
@@ -394,20 +446,22 @@ class SongIdentifier:
                 line = next((l for l in response.split('\n') if indicator in l), "")
                 if line:
                     # Extract text after the indicator
-                    confidence = line.split(indicator)[1].strip().lower()
+                    found_confidence = line.split(indicator, 1)[1].strip().lower() # Use split with maxsplit=1
                     # Map to standard values
-                    if "high" in confidence:
-                        result["confidence"] = "high"
-                    elif "medium" in confidence:
-                        result["confidence"] = "medium"
-                    else:
-                        result["confidence"] = "low"
-                    break
+                    if "high" in found_confidence:
+                        confidence = "high"
+                    elif "medium" in found_confidence:
+                        confidence = "medium"
+                    # else remains "low"
+                    break # Found confidence, stop searching
         
-        # Set explanation from full response
-        result["explanation"] = response
-        
-        return result
+        # Create and return the SongIdentificationResult object
+        return SongIdentificationResult(
+            title=title,
+            artist=artist,
+            confidence=confidence,
+            explanation=response # Store the full original response as explanation
+        )
     
     def _format_time(self, seconds: float) -> str:
         """
