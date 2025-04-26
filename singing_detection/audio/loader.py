@@ -96,6 +96,8 @@ class YouTubeAudioLoader(AudioLoader):
         self._y = None
         self._sr = None
         self._duration = None
+        # Store video ID after download
+        self._video_id = None 
     
     def load_audio(self) -> Tuple[np.ndarray, int]:
         """
@@ -115,8 +117,8 @@ class YouTubeAudioLoader(AudioLoader):
         print(f"Downloading audio from YouTube: {self.youtube_url}")
         
         try:
-            # Generate output filename template
-            output_filename = os.path.join(self.output_dir, '%(title)s.%(ext)s')
+            # Use video ID for the filename template
+            output_filename = os.path.join(self.output_dir, '%(id)s.%(ext)s') 
             
             # Configure yt-dlp options
             ydl_opts = {
@@ -128,27 +130,37 @@ class YouTubeAudioLoader(AudioLoader):
                 }],
                 'outtmpl': output_filename,
                 'quiet': False,
-                'no_warnings': False
+                'no_warnings': False,
+                'keepvideo': False # Don't keep the video file after extraction
             }
             
             # Download audio
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(self.youtube_url, download=True)
-                # Get the actual output file path
+                
+                # Get video ID and construct the expected path
                 if 'entries' in info:  # Playlist
                     info = info['entries'][0]  # Get first video in playlist
                 
-                # Construct the output path from the title and extension
-                title = info['title']
-                self._file_path = os.path.join(self.output_dir, f"{title}.mp3")
+                self._video_id = info['id']
+                # Preferred extension is mp3 based on postprocessor
+                expected_extension = 'mp3' 
+                self._file_path = os.path.join(self.output_dir, f"{self._video_id}.{expected_extension}")
                 
-                # Check if file exists (yt-dlp may have sanitized the filename)
+                # Check if file exists
                 if not os.path.exists(self._file_path):
-                    # Try to find the file with a similar name
-                    for file in os.listdir(self.output_dir):
-                        if file.endswith('.mp3') and file.startswith(title[:10]):
-                            self._file_path = os.path.join(self.output_dir, file)
+                    # Fallback check if extension somehow changed (less likely now)
+                    possible_exts = ['m4a', 'webm', 'ogg'] # Common audio extensions yt-dlp might output
+                    found = False
+                    for ext in possible_exts:
+                        potential_path = os.path.join(self.output_dir, f"{self._video_id}.{ext}")
+                        if os.path.exists(potential_path):
+                            self._file_path = potential_path
+                            found = True
+                            print(f"Warning: Expected .mp3, but found {ext}")
                             break
+                    if not found:
+                        raise FileNotFoundError(f"Downloaded audio file not found for video ID {self._video_id} at expected path: {self._file_path}")
             
             print(f"Downloaded to: {self._file_path}")
             
@@ -160,6 +172,13 @@ class YouTubeAudioLoader(AudioLoader):
             
         except Exception as e:
             print(f"Error downloading YouTube audio: {e}")
+            # Clean up potentially partially downloaded file if path was set
+            if self._file_path and os.path.exists(self._file_path):
+                 try:
+                     os.remove(self._file_path)
+                     print(f"Cleaned up partially downloaded file: {self._file_path}")
+                 except OSError as oe:
+                     print(f"Error cleaning up file {self._file_path}: {oe}")
             raise
     
     @property
