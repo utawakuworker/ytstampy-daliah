@@ -18,10 +18,11 @@ DEFAULT_CONFIG = {
     'n_components': 4,
 
     # Feature Extraction
-    'enable_hpss': True,          # Enable Harmonic-Percussive Source Separation
+    'enable_hpss': False,          # Enable Harmonic-Percussive Source Separation
 
     # Identification Parameters
     'min_duration_for_id': 30.0, # Min duration of a segment to attempt identification
+    'min_duration_for_id':90,
     'whisper_model': 'base',     # Whisper model size
     'gemini_api_key': '',        # IMPORTANT: Best loaded from env var or secure storage in a real app
 

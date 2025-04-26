@@ -339,12 +339,12 @@ class SingingAnalysisPipeline:
             # *** UPDATE: identify_songs *still* expects tuples based on its signature ***
             # Let's refactor identify_songs to accept List[Segment] later if needed.
             # For now, convert back to tuples.
-            segment_tuples_for_id = [(seg.start, seg.end) for seg in final_segments]
+            # segment_tuples_for_id = [(seg.start, seg.end) for seg in final_segments] # REMOVED THIS LINE
 
             self._update_progress(0.8, f"Identifying songs in {len(final_segments)} segments...")
             # The identify_songs method now returns List[SegmentIdentification]
             identification_results: List[SegmentIdentification] = self.identifier.identify_songs(
-                segments=segment_tuples_for_id, # Pass the tuples
+                segments=final_segments, # Pass the list of Segment objects directly
                 min_segment_duration=self.config.get('min_duration_for_id', 30.0),
                 max_segment_duration=self.config.get('max_duration_for_id', 60.0),
                 verbose=False # Let pipeline handle status updates
