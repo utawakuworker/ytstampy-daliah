@@ -185,15 +185,12 @@ class SongIdentifier:
             Transcription text, or None if transcription failed
         """
         try:
-            # Load audio
-            audio = self.whisper_model.load_audio(audio_path)
-            
-            # Transcribe
-            result = self.whisper_model.transcribe(audio)
-            
+            # Transcribe directly using the audio path
+            result = self.whisper_model.transcribe(audio_path)
+
             # Return transcription
             return result["text"].strip()
-            
+
         except Exception as e:
             print(f"Error transcribing with Whisper: {e}")
             return None
