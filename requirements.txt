@@ -5,5 +5,4 @@ scikit-learn
 hmmlearn
 openai-whisper
 requests
-yt-dlp
 ffmpeg-python

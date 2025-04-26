@@ -67,7 +67,6 @@ jobs:
         output-dir: build
 
         # --- Nuitka Plugins ---
-        enable-plugins: numpy # Essential for pandas and scientific stack
 
     - name: Verify inclusions (Optional Debug Step)
       # Check if key files exist in the output directory (build\main.dist for standalone)

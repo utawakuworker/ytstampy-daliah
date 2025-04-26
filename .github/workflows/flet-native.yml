@@ -1,19 +1,17 @@
 # .github/workflows/build-windows.yml
 name: Build Flet App for Windows
-# Set PYTHONUTF8=1 to force Python's standard streams to use UTF-8,
-# preventing UnicodeEncodeError with rich library on Windows CI.
 env:
   PYTHONUTF8: "1"
 on:
   push:
-    branches: [ "main" ] # Trigger on pushes to the main branch
+    branches: [ "main" ]
     paths:
-      - 'ytstampy-daliah/**' # Only run if files in the app directory change
-  workflow_dispatch: # Allow manual triggering from the Actions tab
+      - 'ytstampy-daliah/**'
+  workflow_dispatch:
 
 jobs:
   build-windows:
-    runs-on: windows-latest # Use a Windows runner
+    runs-on: windows-latest
 
     steps:
     - name: Checkout repository code
@@ -22,7 +20,7 @@ jobs:
     - name: Set up Python 3.11
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11' # Flet requires >= 3.9
+        python-version: '3.11'
 
     - name: Install Flet CLI
       run: pip install flet pyinstaller
@@ -30,16 +28,29 @@ jobs:
     - name: Install app dependencies
       run: pip install -r requirements.txt
 
-    # Install FFmpeg using Chocolatey
     - name: Install Chocolatey and FFmpeg
       uses: crazy-max/ghaction-chocolatey@v3
       with:
-        # Installs ffmpeg system-wide on the runner
         args: install ffmpeg -y --no-progress
 
-    # Dependencies listed in pyproject.toml [project].dependencies
-    # will be installed automatically by 'flet build'. No separate pip install needed here.
-    # We manually install from requirements.txt above just in case.
+    # New Step: Copy librosa .pyi stub files
+    - name: Collect librosa stub files
+      shell: bash
+      run: |
+        python -c "
+        import os, shutil, librosa
+        source_dir = os.path.dirname(librosa.__file__)
+        dest_dir = os.path.join('assets', 'librosa_stubs')
+        for root, dirs, files in os.walk(source_dir):
+            for file in files:
+                if file.endswith('.pyi'):
+                    src_path = os.path.join(root, file)
+                    # Preserve directory structure relative to librosa
+                    rel_path = os.path.relpath(src_path, source_dir)
+                    dest_path = os.path.join(dest_dir, rel_path)
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                    shutil.copy2(src_path, dest_path)
+        "
 
     - name: Prepare assets directory
       shell: bash
@@ -47,18 +58,16 @@ jobs:
         mkdir -p assets
         cp "C:/ProgramData/chocolatey/bin/ffmpeg.exe" assets/ffmpeg.exe
 
+    # Modified Build Step: Include .pyi files via --add-data
     - name: Build Flet Windows App
-      # Use bash shell
       shell: bash
-      # Run flet build from the repository root ('.').
-      # Place the output in 'build/windows' relative to the root.
-      # ffmpeg.exe will be automatically included from the 'assets' directory.
-      run: flet build windows . --output build/windows
+      run: |
+        flet build windows . \
+          --output build/windows \
+          --add-data "assets/librosa_stubs;librosa"
 
     - name: Upload Windows Build Artifact
-      # Upload the contents of the build output directory as an artifact.
       uses: actions/upload-artifact@v4
       with:
-        name: ytstampy-windows-build # Name for the downloadable zip file
-        # Use relative path from workspace root
-        path: build/windows/ # The directory containing the built application
+        name: ytstampy-windows-build
+        path: build/windows/

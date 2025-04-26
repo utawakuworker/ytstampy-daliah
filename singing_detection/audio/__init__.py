@@ -11,4 +11,4 @@ from .feature_extraction import (
     PitchFeatureExtractor,
     FeatureExtractorFacade
 )
-from .utils import format_timestamp, play_audio_segment 
+from .utils import format_timestamp, export_results_as_video_chapters
