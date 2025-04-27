@@ -27,6 +27,13 @@ def run_app(page: ft.Page):
     """Configures and runs the Flet application."""
     print("--- run_app called ---")
 
+    # Set window size for desktop apps using the window property
+    page.window.width = 600
+    page.window.height = 1000
+    # Optionally, make the window not resizable:
+    # page.window.resizable = False
+    page.update()
+
     # --- Theme Check (Comment out if you have custom themes) ---
     # page.theme_mode = ft.ThemeMode.LIGHT # Or DARK / SYSTEM
     # page.theme = ft.Theme(...)
@@ -114,8 +121,6 @@ def run_app(page: ft.Page):
 
     # --- Page Settings ---
     page.vertical_alignment = ft.MainAxisAlignment.START
-    page.window_width = 600
-    page.window_height = 1000
     print("Page settings applied. Calling final page.update()...")
     page.update() # Final initial render
     print("--- run_app finished ---")
@@ -123,4 +128,4 @@ def run_app(page: ft.Page):
 if __name__ == "__main__":
 
     print("Starting Flet app...")
-    ft.app(target=run_app) 
+    ft.app(target=run_app, view=ft.FLET_APP) 
