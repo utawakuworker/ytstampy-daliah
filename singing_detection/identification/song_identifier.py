@@ -144,16 +144,32 @@ class SongIdentifier:
             if verbose:
                 print(f"  Transcript: {transcript[:100]}..." if len(transcript) > 100 else f"  Transcript: {transcript}")
             
-            # Identify song with Gemini
+            # NEW STEP: Correct lyrics with Gemini before identification
+            if verbose:
+                print(f"  Correcting lyrics with Gemini...")
+                
+            corrected_lyrics = self._correct_lyrics_with_gemini(transcript)
+            
+            if verbose:
+                if corrected_lyrics != transcript:
+                    print(f"  Corrected lyrics: {corrected_lyrics[:100]}..." if len(corrected_lyrics) > 100 else f"  Corrected lyrics: {corrected_lyrics}")
+                else:
+                    print(f"  No corrections needed")
+            
+            # Identify song with Gemini using corrected lyrics
             if verbose:
                 print(f"  Identifying song with Gemini...")
                 
-            identification_result = self._identify_with_gemini(transcript, start_time, end_time)
+            identification_result = self._identify_with_gemini(corrected_lyrics, start_time, end_time)
+            
+            # Set the refined lyrics used in the result
+            if identification_result and not identification_result.error:
+                identification_result.refined_lyrics_used = corrected_lyrics
             
             # Store result as SegmentIdentification object
             results.append(SegmentIdentification(
                 segment=segment,
-                transcript=transcript,
+                transcript=transcript,  # Still store the original transcript
                 identification=identification_result
             ))
             
@@ -227,6 +243,65 @@ class SongIdentifier:
             print(f"Error transcribing with Whisper: {e}")
             return None
     
+    def _correct_lyrics_with_gemini(self, transcript: str) -> str:
+        """
+        Correct potentially erroneous lyrics using Gemini.
+        
+        Args:
+            transcript: Raw transcription from Whisper
+            
+        Returns:
+            Corrected lyrics text
+        """
+        if not self.gemini_api_key:
+            # If no API key, return the original transcript
+            return transcript
+        
+        try:
+            # Create prompt for Gemini focusing on correcting lyrics
+            prompt = f"""
+            The following is an automatically transcribed song lyric from an audio recognition system. 
+            It may contain errors, incorrect words, or grammar issues due to audio quality, background noise, 
+            or transcription limitations:
+
+            {transcript}
+
+            Please correct and clean up ONLY the obvious errors in these lyrics. DO NOT completely rewrite them.
+            Focus on:
+            1. Fixing obvious misspellings
+            2. Correcting grammar only where it's clearly wrong
+            3. Adjusting punctuation for better readability
+            4. Maintaining the original meaning and wording whenever possible
+
+            Return ONLY the corrected lyrics text, with no explanations or metadata.
+            """
+            
+            # Call Gemini API
+            response_text = self._call_gemini_api(prompt)
+            
+            # Check for API errors
+            if response_text.startswith("API Error:"):
+                print(f"Error correcting lyrics: {response_text}")
+                return transcript  # Return original if there was an error
+            
+            # Clean up response - remove any metadata, explanations, or quotes that might be included
+            cleaned_response = response_text.strip()
+            
+            # Remove potential leading/trailing quotation marks
+            if cleaned_response.startswith('"') and cleaned_response.endswith('"'):
+                cleaned_response = cleaned_response[1:-1]
+            
+            # If response is empty, return original
+            if not cleaned_response:
+                return transcript
+                
+            return cleaned_response
+            
+        except Exception as e:
+            print(f"Error correcting lyrics with Gemini: {e}")
+            # Return original transcript on error
+            return transcript
+    
     def _identify_with_gemini(self, 
                              transcript: str, 
                              start: float, 
@@ -235,7 +310,7 @@ class SongIdentifier:
         Identify song using Gemini API, focusing primarily on title and artist.
         
         Args:
-            transcript: Transcribed lyrics
+            transcript: Transcribed lyrics (potentially corrected)
             start: Start time in seconds (for prompt context)
             end: End time in seconds (for prompt context)
             
@@ -252,13 +327,13 @@ class SongIdentifier:
             formatted_end = self._format_time(end)
             
             # Create simplified prompt for Gemini that focuses on title and artist
-            # Added a note that the lyrics are transcribed and may contain errors.
+            # Now using corrected lyrics
             prompt = f"""
-            I have a song segment from {formatted_start} to {formatted_end}. Below is an *automated transcription* of the lyrics from this segment, which may contain errors:
+            I have a song segment from {formatted_start} to {formatted_end}. Below are the lyrics from this segment:
 
             {transcript}
 
-            Please identify this song based on the transcribed lyrics, providing the following information:
+            Please identify this song based on the lyrics, providing the following information:
             1. Song title
             2. Artist/band
             3. Confidence level (high, medium, low)

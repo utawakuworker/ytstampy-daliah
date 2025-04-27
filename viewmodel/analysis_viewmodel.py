@@ -6,34 +6,34 @@ from datetime import datetime, timedelta
 
 # Import the pipeline and config from the model package
 try:
-    from model.analysis_pipeline import SingingAnalysisPipeline
     from model.config import DEFAULT_CONFIG
 except ImportError:
-    # Handle potential path issues if running viewmodel directly
     import sys
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if parent_dir not in sys.path:
         sys.path.append(parent_dir)
-    from model.analysis_pipeline import SingingAnalysisPipeline
     from model.config import DEFAULT_CONFIG
 
 # Define path for user config file (in the same directory as main.py usually)
 CONFIG_FILE_PATH = "user_config.json"
 
 # --- Import Dataclasses ---
-# Assuming data_models.py is accessible from the viewmodel directory's perspective
-# Adjust the import path if necessary (e.g., from ..model.data_models import ...)
 try:
     from model.data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
 except ImportError:
-    # Handle path adjustments if running viewmodel scripts directly or packaging issues
     import sys
     import os
-    # Add project root to path if necessary (adjust based on your structure)
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if project_root not in sys.path:
         sys.path.append(project_root)
     from model.data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
+
+from model.pipeline_steps import (
+    AudioLoaderStep, FeatureExtractionStep, SegmentDetectionStep,
+    SegmentProcessingStep, SongIdentificationStep,
+    VisualizationStep, SaveResultsStep
+)
+from model.analysis_pipeline import StatusReporter, SingingAnalysisOrchestrator, sanitize_filename
 
 class AnalysisViewModel:
     """
@@ -72,7 +72,25 @@ class AnalysisViewModel:
 
         # Internal state
         self.pipeline_thread: Optional[threading.Thread] = None
-        self.pipeline_instance: Optional[SingingAnalysisPipeline] = None
+        self.result_context = None
+
+        # Set up reporter with ViewModel-bound callbacks
+        self.reporter = StatusReporter(
+            status_callback=self._pipeline_status_update,
+            progress_callback=self._pipeline_progress_update
+        )
+
+        # Compose the pipeline steps
+        self.steps = [
+            AudioLoaderStep(self.config),
+            FeatureExtractionStep(self.config),
+            SegmentDetectionStep(self.config),
+            SegmentProcessingStep(self.config),
+            SongIdentificationStep(self.config),
+            VisualizationStep(self.config),      # Optional
+            SaveResultsStep(self.config),        # Optional
+        ]
+        self.pipeline = SingingAnalysisOrchestrator(self.steps, self.reporter)
 
     # --- Config Persistence ---
     def _load_config_from_file(self):
@@ -162,19 +180,29 @@ class AnalysisViewModel:
              if not current_config['gemini_api_key']:
                   self._pipeline_status_update("Warning: Gemini API Key not set in config or environment.")
 
-        self.pipeline_instance = SingingAnalysisPipeline(
-            config=current_config,
-            status_callback=self._pipeline_status_update,
-            progress_callback=self._pipeline_progress_update
-        )
+        # Rebuild steps and pipeline with the latest config
+        self.steps = [
+            AudioLoaderStep(current_config),
+            FeatureExtractionStep(current_config),
+            SegmentDetectionStep(current_config),
+            SegmentProcessingStep(current_config),
+            SongIdentificationStep(current_config),
+            VisualizationStep(current_config),
+            SaveResultsStep(current_config),
+        ]
+        self.pipeline = SingingAnalysisOrchestrator(self.steps, self.reporter)
 
         def run_in_thread():
-            results = None
             success = False
             try:
-                results = self.pipeline_instance.run()
-                self.analysis_results = results
-                if results is not None: # Assume non-None results dictionary means success
+                self.result_context = self.pipeline.run()
+                if self.result_context is not None:
+                    # Optionally, convert context to AnalysisResults for compatibility
+                    self.analysis_results = AnalysisResults(
+                        total_duration=self.result_context.get('total_duration'),
+                        final_segments=self.result_context.get('final_segments', []),
+                        identification_results=self.result_context.get('identification_results', [])
+                    )
                     success = True
             except Exception as e:
                 self._pipeline_status_update(f"Pipeline Thread Error: {e}")
@@ -196,44 +224,25 @@ class AnalysisViewModel:
 
     def request_stop(self):
         """Requests the analysis pipeline to stop."""
-        if not self.is_running or not self.pipeline_instance:
+        if not self.is_running:
              self._pipeline_status_update("Cannot stop: Analysis not running.")
              return
 
         self._pipeline_status_update("Requesting stop...")
         self._notify_view() # Show status update immediately
-        if hasattr(self.pipeline_instance, 'request_stop'):
-             self.pipeline_instance.request_stop()
+        if hasattr(self.pipeline, 'request_stop'):
+             self.pipeline.request_stop()
         else:
              self.log_messages.append("[WARNING] Pipeline does not have a 'request_stop' method. Stopping may be delayed.")
 
     def save_results(self):
         """Triggers saving results using the completed pipeline instance."""
-        if self.is_running:
-            self._pipeline_status_update("Cannot save results: Analysis is running.")
-            return
-        if not self.pipeline_instance or not self.analysis_results:
-            self._pipeline_status_update("Cannot save results: No analysis has been run successfully.")
-            return
-
-        try:
-            self._pipeline_status_update("Saving results...")
-            self.pipeline_instance.save_results() # Uses callbacks internally now
-        except Exception as e:
-             self._pipeline_status_update(f"Error triggering save: {e}")
-        finally:
-             self._notify_view() # Ensure UI reflects final status
+        self._pipeline_status_update("SaveResultsStep is now part of the pipeline and runs automatically after analysis.")
+        self._notify_view()
 
     def visualize_results(self):
         """Visualization feature is disabled in the GUI."""
-        self._pipeline_status_update("Visualization feature is currently disabled in the GUI.")
-        # Optionally, you could still call the backend pipeline's visualize method
-        # if you want the files generated even without a button press.
-        # if not self.is_running and self.pipeline_instance:
-        #     try:
-        #         self.pipeline_instance.visualize()
-        #     except Exception as e:
-        #         self._pipeline_status_update(f"Error during background visualization file generation: {e}")
+        self._pipeline_status_update("VisualizationStep is now part of the pipeline and runs automatically after analysis.")
         self._notify_view()
 
     def get_status_message(self) -> str:
@@ -367,4 +376,8 @@ class AnalysisViewModel:
     def get_full_config(self) -> Dict[str, Any]:
         """Returns a copy of the current configuration."""
         # Now returns config potentially loaded from file
-        return self.config.copy() 
+        return self.config.copy()
+
+    def run_analysis(self):
+        self.result_context = self.pipeline.run()
+        # ... handle result_context as needed ... 
