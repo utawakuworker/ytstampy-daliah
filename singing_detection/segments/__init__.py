@@ -2,7 +2,7 @@
 Segment processing module for singing detection.
 """
 # Import main classes for easier access
-from .segment_processor import (
+from singing_detection.segments.segment_processor import (
     SegmentProcessor,
     SegmentValidator,
     SegmentFilter,

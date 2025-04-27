@@ -1,7 +1,7 @@
 import os
 import re
 from typing import List, Dict, Any, Optional, Callable
-from .pipeline_steps import PipelineStep
+from model.pipeline_steps import PipelineStep
 
 # --- Helper Function ---
 def sanitize_filename(name: str, max_length: int = 100) -> str:

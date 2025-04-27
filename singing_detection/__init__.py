@@ -8,10 +8,11 @@ from .audio.loader import AudioLoaderFactory, AudioLoader, LocalAudioLoader, You
 from .audio.feature_extraction import FeatureExtractorFacade
 
 # Detection
-from .detection.detection_engine import (
-    DetectionEngine, 
-    HMMDetectionEngine,
-    ClusterEnhancedHMMDetectionEngine
+from singing_detection.detection import (
+    DetectionEngine,
+    FeatureEngineer,
+    InterludeAnalyzer,
+    SingingDetectionPipeline,
 )
 
 # Segment Processing

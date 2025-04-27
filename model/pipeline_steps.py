@@ -1,10 +1,10 @@
 from typing import Dict, Any
 from singing_detection.audio.loader import AudioLoaderFactory
 from singing_detection.audio.feature_extraction import FeatureExtractorFacade
-from singing_detection.detection.detection_engine import ClusterEnhancedHMMDetectionEngine
+from singing_detection.detection.detection_pipeline import SingingDetectionPipeline
 from singing_detection.segments.segment_processor import SegmentFilter, SegmentRefiner
 from singing_detection.identification.song_identifier import SongIdentifier
-from .data_models import Segment, AnalysisResults
+from model.data_models import Segment, AnalysisResults
 import os
 import pandas as pd
 import json
@@ -59,26 +59,28 @@ class SegmentDetectionStep(PipelineStep):
             context['initial_segments'] = []
             context['frame_df_with_states'] = None
             return True
-        detector = ClusterEnhancedHMMDetectionEngine()
         ref_dur = self.config.get('ref_duration', 2.0)
         sing_start = self.config.get('singing_ref_time', 0)
         nsing_start = self.config.get('non_singing_ref_time', 0)
         total_dur = context.get('total_duration', float('inf'))
         singing_ref = (max(0, sing_start), min(total_dur, sing_start + ref_dur))
         non_singing_ref = (max(0, nsing_start), min(total_dur, nsing_start + ref_dur))
-        segments, frame_df_with_states = detector.detect_singing(
-            context['y'], context['sr'], context['feature_df'],
-            singing_ref, non_singing_ref,
-            threshold=self.config.get('hmm_threshold', 0.55),
-            min_duration=self.config.get('min_segment_duration', 10.0),
-            min_gap=self.config.get('min_segment_gap', 1.5),
-            visualize=False,
-            dim_reduction=self.config.get('dim_reduction', 'pca'),
-            n_components=self.config.get('n_components', 4),
-            verbose=False
+        params = {
+            'threshold': self.config.get('hmm_threshold', 0.55),
+            'min_duration': self.config.get('min_segment_duration', 10.0),
+            'min_gap': self.config.get('min_segment_gap', 1.5),
+            'dim_reduction': self.config.get('dim_reduction', 'pca'),
+            'n_components': self.config.get('n_components', 4),
+            'verbose': False
+        }
+        segments, results = SingingDetectionPipeline.run(
+            context['feature_df'],
+            singing_ref, non_singing_ref, params
         )
         context['initial_segments'] = segments
-        context['frame_df_with_states'] = frame_df_with_states
+        # Optionally, you can reconstruct a DataFrame similar to frame_df_with_states if needed
+        # For now, just store the results dict
+        context['frame_df_with_states'] = results
         return True
 
 class SegmentProcessingStep(PipelineStep):
