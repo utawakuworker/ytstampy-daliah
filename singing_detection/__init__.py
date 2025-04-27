@@ -13,7 +13,7 @@ from singing_detection.detection import (
     FeatureEngineer,
     InterludeAnalyzer,
     SingingDetectionPipeline,
-
+)
 
 # Segment Processing
 from singing_detection.segments.segment_processor import (
