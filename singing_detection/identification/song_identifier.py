@@ -12,24 +12,7 @@ from singing_detection.identification.audio_segment_utils import AudioSegmentExt
 from singing_detection.identification.transcription import Transcriber
 from singing_detection.identification.gemini_client import GeminiClient
 import re
-
-# --- Import Data Models ---
-# Assuming model is a sibling directory to singing_detection parent
-try:
-    # Adjust relative path based on your project structure
-    # If song_identifier.py is in singing_detection/identification/
-    # and data_models.py is in model/
-    # We need to go up two levels then into model
-    from ...model.data_models import Segment, SegmentIdentification, SongIdentificationResult
-except ImportError:
-    # Fallback if the relative import fails (e.g., running script directly)
-    # This might require adding the project root to PYTHONPATH
-    print("Warning: Relative import failed. Attempting direct import of data_models.")
-    try:
-        from model.data_models import Segment, SegmentIdentification, SongIdentificationResult
-    except ImportError:
-        print("Error: Could not import data models. Ensure 'model' is accessible.")
-        sys.exit(1)
+from model.data_models import Segment, SegmentIdentification, SongIdentificationResult
 
 def _get_correct_path(relative_path):
     """ Get the absolute path to resource, works for dev and for PyInstaller """
