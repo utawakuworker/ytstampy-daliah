@@ -61,8 +61,8 @@ jobs:
         # Output directory relative to repository root
         output-dir: build
 
-        extra-options: --nofollow-import-to=numba
-
+        nofollow-import-to: numba
+        
     - name: Verify inclusions (Optional Debug Step)
       # Check if key files exist in the output directory (build\main.dist for standalone)
       run: |
