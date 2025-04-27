@@ -1,7 +1,26 @@
 import os
 import re
-from typing import List, Dict, Any, Optional, Callable
+import json
+import warnings
+from typing import Dict, Any, Optional, List, Callable
+from urllib.parse import urlparse, parse_qs
+import pandas as pd
+
+from model.data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
 from model.pipeline_steps import PipelineStep
+
+warnings.filterwarnings('ignore')
+
+try:
+    from singing_detection.audio.loader import AudioLoaderFactory
+    from singing_detection.audio.feature_extraction import FeatureExtractorFacade
+    from singing_detection.detection.detection_engine import ClusterEnhancedHMMDetectionEngine
+    from singing_detection.segments.segment_processor import SegmentFilter, SegmentProcessingPipeline, SegmentRefiner
+    from singing_detection.visualization.plots import plot_waveform_with_segments, plot_feature_comparison
+    from singing_detection.identification.song_identifier import SongIdentifier
+except ImportError as e:
+    print(f"Error importing project modules in analysis_pipeline.py: {e}")
+    raise
 
 # --- Helper Function ---
 def sanitize_filename(name: str, max_length: int = 100) -> str:

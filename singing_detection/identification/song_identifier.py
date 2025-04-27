@@ -4,14 +4,14 @@ import numpy as np
 import subprocess
 import json
 import requests
-from typing import List, Tuple, Dict, Optional, Any
-from pathlib import Path
+from typing import List, Dict, Optional, Any
 import whisper
 import sys
 from singing_detection.identification.audio_segment_utils import AudioSegmentExtractor
 from singing_detection.identification.transcription import Transcriber
 from singing_detection.identification.gemini_client import GeminiClient
 import re
+
 from model.data_models import Segment, SegmentIdentification, SongIdentificationResult
 
 def _get_correct_path(relative_path):
