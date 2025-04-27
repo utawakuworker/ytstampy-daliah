@@ -1,21 +1,15 @@
 import os
-import sys
+import re
 import json
 import warnings
+from typing import Dict, Any, Optional, List, Callable
+from urllib.parse import urlparse, parse_qs
 import pandas as pd
-from typing import Dict, Any, Optional, List, Tuple, Callable
-import re # Import regex module for sanitization
-from urllib.parse import urlparse, parse_qs # Import URL parsing tools
-import numpy as np # Ensure numpy is imported
 
-# --- Import Dataclasses ---
-from .data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
+from model.data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
 
-# --- Setup Environment ---
 warnings.filterwarnings('ignore')
 
-# --- Import Project Modules ---
-# Assuming singing_detection is now a sibling directory or in PYTHONPATH
 try:
     from singing_detection.audio.loader import AudioLoaderFactory
     from singing_detection.audio.feature_extraction import FeatureExtractorFacade
@@ -25,13 +19,7 @@ try:
     from singing_detection.identification.song_identifier import SongIdentifier
 except ImportError as e:
     print(f"Error importing project modules in analysis_pipeline.py: {e}")
-    # Depending on how you run, you might need path adjustments
-    # Example: Add parent directory if running script directly from model/
-    # parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # if parent_dir not in sys.path:
-    #     sys.path.append(parent_dir)
-    #     from singing_detection.audio.loader import AudioLoaderFactory # etc.
-    raise # Re-raise the error after attempting path fix or logging
+    raise
 
 # --- Helper Function ---
 def sanitize_filename(name: str, max_length: int = 100) -> str:

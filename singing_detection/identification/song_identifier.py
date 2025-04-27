@@ -4,29 +4,11 @@ import numpy as np
 import subprocess
 import json
 import requests
-from typing import List, Tuple, Dict, Optional, Any
-from pathlib import Path
+from typing import List, Dict, Optional, Any
 import whisper
 import sys
 
-# --- Import Data Models ---
-# Assuming model is a sibling directory to singing_detection parent
-try:
-    # Adjust relative path based on your project structure
-    # If song_identifier.py is in singing_detection/identification/
-    # and data_models.py is in model/
-    # We need to go up two levels then into model
-    from ...model.data_models import Segment, SegmentIdentification, SongIdentificationResult
-except ImportError:
-    # Fallback if the relative import fails (e.g., running script directly)
-    # This might require adding the project root to PYTHONPATH
-    print("Warning: Relative import failed. Attempting direct import of data_models.")
-    try:
-        from model.data_models import Segment, SegmentIdentification, SongIdentificationResult
-    except ImportError as e:
-        print(f"Error: Could not import data models: {e}. Ensure 'model' is accessible.")
-        # Decide how critical this is. Maybe raise the error or exit.
-        sys.exit(1) # Or raise e
+from model.data_models import Segment, SegmentIdentification, SongIdentificationResult
 
 def _get_correct_path(relative_path):
     """ Get the absolute path to resource, works for dev and for PyInstaller """
