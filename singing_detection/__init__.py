@@ -8,11 +8,12 @@ from singing_detection.audio.loader import AudioLoaderFactory, AudioLoader, Loca
 from singing_detection.audio.feature_extraction import FeatureExtractorFacade
 
 # Detection
-from singing_detection.detection.detection_engine import (
-    DetectionEngine, 
-    HMMDetectionEngine,
-    ClusterEnhancedHMMDetectionEngine
-)
+from singing_detection.detection import (
+    DetectionEngine,
+    FeatureEngineer,
+    InterludeAnalyzer,
+    SingingDetectionPipeline,
+
 
 # Segment Processing
 from singing_detection.segments.segment_processor import (

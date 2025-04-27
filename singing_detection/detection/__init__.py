@@ -1,9 +1,15 @@
 """
 Detection algorithms module for singing detection.
 """
-# Import main classes for easier access
-from singing_detection.detection.detection_engine import (
-    DetectionEngine,
-    HMMDetectionEngine,
-    ClusterEnhancedHMMDetectionEngine
-)
+from singing_detection.detection.detection_engine import DetectionEngine
+from singing_detection.detection.feature_engineering import FeatureEngineer
+from singing_detection.detection.interlude_analysis import InterludeAnalyzer
+from singing_detection.detection.detection_pipeline import SingingDetectionPipeline
+
+__all__ = [
+    'DetectionEngine',
+    'FeatureEngineer',
+    'InterludeAnalyzer',
+    'SingingDetectionPipeline',
+]
+

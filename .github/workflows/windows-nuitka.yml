@@ -35,8 +35,6 @@ jobs:
       uses: Nuitka/Nuitka-Action@v1.2
       with:
         # --- Basic Setup ---
-        # Script name relative to the repo root
-        # *** Verify this path is correct for your project ***
         script-name: main.py
 
         # --- Packaging Options ---
@@ -62,7 +60,7 @@ jobs:
         # --- Output ---
         # Output directory relative to repository root
         output-dir: build
-        
+
         nofollow-import-to: numba
 
     - name: Verify inclusions (Optional Debug Step)
