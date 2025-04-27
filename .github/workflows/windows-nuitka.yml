@@ -3,10 +3,7 @@ name: Build Python Executable with Nuitka
 on:
   push:
     branches: [ "main" ] # Trigger on push to the main branch
-    # Optional: Only trigger if relevant files change
-    # paths:
-    #  - 'your_app_directory/**' # Specify your app directory if not root
-    #  - '.github/workflows/build-windows-nuitka.yml'
+
   workflow_dispatch: # Allow manual triggering
 
 jobs:
@@ -38,8 +35,6 @@ jobs:
       uses: Nuitka/Nuitka-Action@v1.2
       with:
         # --- Basic Setup ---
-        # Script name relative to the repo root
-        # *** Verify this path is correct for your project ***
         script-name: main.py
 
         # --- Packaging Options ---
@@ -66,7 +61,7 @@ jobs:
         # Output directory relative to repository root
         output-dir: build
 
-        # --- Nuitka Plugins ---
+        extra-options: --nofollow-import-to=numba
 
     - name: Verify inclusions (Optional Debug Step)
       # Check if key files exist in the output directory (build\main.dist for standalone)
