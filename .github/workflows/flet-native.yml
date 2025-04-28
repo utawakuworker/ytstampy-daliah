@@ -75,6 +75,18 @@ jobs:
           cp -r $STUBS_DIR/* $LIBROSA_BUILD_DIR/
         fi
 
+    - name: Install Visual C++ Redistributable
+      run: choco install vcredist140 -y
+      
+    - name: Copy vcomp140.dll and msvcp140.dll to sklearn .libs
+      shell: bash
+      run: |
+        DLL_SRC_DIR="/c/Windows/System32"
+        DLL_DST_DIR="build/windows/site-packages/sklearn/.libs"
+        mkdir -p "$DLL_DST_DIR"
+        cp "$DLL_SRC_DIR/vcomp140.dll" "$DLL_DST_DIR/vcomp140.dll"
+        cp "$DLL_SRC_DIR/msvcp140.dll" "$DLL_DST_DIR/msvcp140.dll"
+
     - name: Upload Windows Build Artifact
       uses: actions/upload-artifact@v4
       with:
