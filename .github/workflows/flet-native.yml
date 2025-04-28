@@ -65,6 +65,16 @@ jobs:
         flet build windows . \
           --output build/windows \
 
+    # (Optional) Copy librosa .pyi stubs into build output
+    - name: Copy librosa .pyi stubs into build output
+      shell: bash
+      run: |
+        LIBROSA_BUILD_DIR="build/windows/site-packages/librosa"
+        STUBS_DIR="assets/librosa_stubs"
+        if [ -d "$LIBROSA_BUILD_DIR" ] && [ -d "$STUBS_DIR" ]; then
+          cp -r $STUBS_DIR/* $LIBROSA_BUILD_DIR/
+        fi
+
     - name: Upload Windows Build Artifact
       uses: actions/upload-artifact@v4
       with:
