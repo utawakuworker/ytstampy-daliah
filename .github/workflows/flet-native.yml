@@ -64,7 +64,6 @@ jobs:
       run: |
         flet build windows . \
           --output build/windows \
-          --add-data "assets/librosa_stubs;librosa"
 
     - name: Upload Windows Build Artifact
       uses: actions/upload-artifact@v4
