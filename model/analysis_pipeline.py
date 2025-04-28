@@ -14,7 +14,7 @@ warnings.filterwarnings('ignore')
 try:
     from singing_detection.audio.loader import AudioLoaderFactory
     from singing_detection.audio.feature_extraction import FeatureExtractorFacade
-    from singing_detection.detection.detection_engine import ClusterEnhancedHMMDetectionEngine
+    from singing_detection.detection.detection_engine import DetectionEngine
     from singing_detection.segments.segment_processor import SegmentFilter, SegmentProcessingPipeline, SegmentRefiner
     from singing_detection.visualization.plots import plot_waveform_with_segments, plot_feature_comparison
     from singing_detection.identification.song_identifier import SongIdentifier
