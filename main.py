@@ -1,4 +1,5 @@
 import flet as ft
+import lazy_loader # noqa: F401 dummy import
 import sys
 import os
 
