@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import tempfile
+from typing import List, Optional, Any
 
 # Third-party
 
@@ -14,8 +15,7 @@ from singing_detection.identification.audio_segment_utils import \
     AudioSegmentExtractor
 from singing_detection.identification.gemini_client import GeminiClient
 from singing_detection.identification.transcription import Transcriber
-
-from .whisper_singleton import get_whisper_model
+from singing_detection.identification.whisper_singleton import get_whisper_model
 
 
 def _get_correct_path(relative_path):
