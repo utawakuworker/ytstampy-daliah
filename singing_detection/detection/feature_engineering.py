@@ -1,6 +1,6 @@
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
+from scipy.cluster.vq import kmeans2
+
 
 class FeatureEngineer:
     @staticmethod
@@ -8,8 +8,8 @@ class FeatureEngineer:
         feature_cols = [col for col in features_df.columns if col != 'time' and not col.endswith('_cluster')]
         features = features_df[feature_cols].values
         times = features_df['time'].values
-        scaler = StandardScaler()
-        features_scaled = scaler.fit_transform(features)
+        # Manual standard scaling
+        features_scaled = (features - features.mean(axis=0)) / (features.std(axis=0) + 1e-8)
         dim_reduction = params.get('dim_reduction', 'pca')
         n_components = params.get('n_components', 10)
         verbose = params.get('verbose', True)
@@ -18,9 +18,10 @@ class FeatureEngineer:
         reduction_method = None
 
         if dim_reduction == 'pca':
-            from sklearn.decomposition import PCA
-            reducer = PCA(n_components=min(n_components, features_scaled.shape[1]))
-            features_reduced = reducer.fit_transform(features_scaled)
+            # PCA using numpy SVD
+            X_centered = features_scaled - features_scaled.mean(axis=0)
+            U, S, Vt = np.linalg.svd(X_centered, full_matrices=False)
+            features_reduced = np.dot(X_centered, Vt[:n_components].T)
             reduction_method = "PCA"
         elif dim_reduction == 'umap':
             try:
@@ -55,8 +56,8 @@ class FeatureEngineer:
     def run_clustering(features, singing_centroid, non_singing_centroid, params):
         n_clusters = 2
         initial_centroids = np.vstack([singing_centroid, non_singing_centroid])
-        kmeans = KMeans(n_clusters=n_clusters, init=initial_centroids, n_init=1)
-        cluster_labels = kmeans.fit_predict(features)
+        # Use scipy's kmeans2 for clustering
+        centroids, cluster_labels = kmeans2(features, initial_centroids, minit='matrix', iter=20)
         singing_ref_mask = (np.linalg.norm(features - singing_centroid, axis=1) < np.linalg.norm(features - non_singing_centroid, axis=1))
         singing_cluster_votes = np.bincount(cluster_labels[singing_ref_mask], minlength=n_clusters)
         non_singing_cluster_votes = np.bincount(cluster_labels[~singing_ref_mask], minlength=n_clusters)

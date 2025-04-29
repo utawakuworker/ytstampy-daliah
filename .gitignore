@@ -1,3 +1,4 @@
 __pycache__
 output_analysis_gui/
 user_config.json
+singing_detection/identification/whisper_models/

@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class InterludeAnalyzer:
     @staticmethod
     def analyze(singing_segments, times, features_reduced, states, posteriors, cluster_labels, singing_cluster, params):

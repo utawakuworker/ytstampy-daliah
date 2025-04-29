@@ -1,7 +1,8 @@
-import flet as ft
-import lazy_loader # noqa: F401 dummy import
-import sys
 import os
+import sys
+
+import flet as ft
+import lazy_loader  # noqa: F401 dummy import
 
 # Ensure the current directory is in the path to find sibling packages
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -10,8 +11,8 @@ if current_dir not in sys.path:
 
 try:
     from gui.app_view import AppView
-    from viewmodel.analysis_viewmodel import AnalysisViewModel
     from gui.localization import LocalizationManager
+    from viewmodel.analysis_viewmodel import AnalysisViewModel
 except ImportError as e:
      print(f"Error importing View/ViewModel/Localization in main.py: {e}")
      print("Ensure gui/ and viewmodel/ packages are correctly structured.")

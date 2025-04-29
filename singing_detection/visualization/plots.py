@@ -1,8 +1,9 @@
 import numpy as np
+
 # Try importing visualization libraries and set flags
 try:
-    import matplotlib.pyplot as plt
     import matplotlib.animation as animation
+    import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
@@ -22,7 +23,7 @@ except ImportError:
 
 import librosa
 import librosa.display
-import pandas as pd
+
 
 def plot_waveform_with_segments(y, sr, segments, title="Detected Singing Segments", 
                                reference_segments=None, figsize=(14, 6)):

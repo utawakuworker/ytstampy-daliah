@@ -1,8 +1,8 @@
-import threading
-import os
 import json
-from typing import Dict, Any, Optional, Callable, List
+import os
+import threading
 from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, List, Optional
 
 # Import the pipeline and config from the model package
 try:
@@ -19,21 +19,23 @@ CONFIG_FILE_PATH = "user_config.json"
 
 # --- Import Dataclasses ---
 try:
-    from model.data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
+    from model.data_models import (AnalysisResults, Segment,
+                                   SegmentIdentification)
 except ImportError:
-    import sys
     import os
+    import sys
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if project_root not in sys.path:
         sys.path.append(project_root)
-    from model.data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
+    from model.data_models import AnalysisResults, Segment, SegmentIdentification
 
-from model.pipeline_steps import (
-    AudioLoaderStep, FeatureExtractionStep, SegmentDetectionStep,
-    SegmentProcessingStep, SongIdentificationStep,
-    VisualizationStep, SaveResultsStep
-)
-from model.analysis_pipeline import StatusReporter, SingingAnalysisOrchestrator, sanitize_filename
+from model.analysis_pipeline import (SingingAnalysisOrchestrator,
+                                     StatusReporter)
+from model.pipeline_steps import (AudioLoaderStep, FeatureExtractionStep,
+                                  SaveResultsStep, SegmentDetectionStep,
+                                  SegmentProcessingStep,
+                                  SongIdentificationStep, VisualizationStep)
+
 
 class AnalysisViewModel:
     """

@@ -1,8 +1,9 @@
-import numpy as np
-import librosa
-import pandas as pd
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple, List, Optional, Any, Union
+from typing import List
+
+import librosa
+import numpy as np
+import pandas as pd
 
 
 class FeatureExtractor(ABC):
@@ -16,12 +17,10 @@ class FeatureExtractor(ABC):
     @abstractmethod
     def extract_features(self, y: np.ndarray, sr: int) -> pd.DataFrame:
         """Extract features from audio signal and return as DataFrame."""
-        pass
     
     @property
     def feature_names(self) -> List[str]:
         """Get list of feature names this extractor provides."""
-        pass
 
 
 class SpectralFeatureExtractor(FeatureExtractor):

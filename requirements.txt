@@ -1,8 +1,8 @@
 flet
 pandas
 librosa 
-scikit-learn
 hmmlearn
 openai-whisper
 requests
 ffmpeg-python
+scipy

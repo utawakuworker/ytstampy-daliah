@@ -1,9 +1,11 @@
 import os
 import tempfile
-import numpy as np
-import librosa
 from abc import ABC, abstractmethod
-from typing import Tuple, Optional, Union
+from typing import Optional, Tuple
+
+import librosa
+import numpy as np
+
 
 class AudioLoader(ABC):
     """Abstract base class for audio loaders."""
@@ -16,19 +18,16 @@ class AudioLoader(ABC):
         Returns:
             Tuple[np.ndarray, int]: Audio signal and sample rate
         """
-        pass
     
     @property
     @abstractmethod
     def duration(self) -> float:
         """Get audio duration in seconds."""
-        pass
     
     @property
     @abstractmethod
     def file_path(self) -> str:
         """Get file path of loaded audio."""
-        pass
 
 
 class LocalAudioLoader(AudioLoader):

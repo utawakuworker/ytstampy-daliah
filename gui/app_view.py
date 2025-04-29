@@ -5,11 +5,12 @@ Main Flet GUI view for the Singing Analysis application.
 Displays UI controls, binds to the AnalysisViewModel, and handles user interaction.
 All translation key maps are module-level constants for maintainability.
 """
-import flet as ft
-import os
 import re
+from typing import Any, Callable, Dict, List
+
+import flet as ft
+
 from viewmodel.analysis_viewmodel import AnalysisViewModel
-from typing import Dict, Any, Optional, Callable, List
 
 # --- Translation Key Maps ---
 STATUS_KEY_MAP = {

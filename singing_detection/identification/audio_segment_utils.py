@@ -2,6 +2,7 @@ import os
 import subprocess
 from typing import Optional
 
+
 class AudioSegmentExtractor:
     """
     Utility class for extracting audio segments from a file using FFmpeg.

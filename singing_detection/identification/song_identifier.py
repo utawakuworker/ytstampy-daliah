@@ -1,18 +1,22 @@
-import os
-import tempfile
-import numpy as np
-import subprocess
+# Standard library
 import json
-import requests
-from typing import List, Dict, Optional, Any
-import whisper
-import sys
-from singing_detection.identification.audio_segment_utils import AudioSegmentExtractor
-from singing_detection.identification.transcription import Transcriber
-from singing_detection.identification.gemini_client import GeminiClient
+import os
 import re
+import sys
+import tempfile
 
-from model.data_models import Segment, SegmentIdentification, SongIdentificationResult
+# Third-party
+
+from model.data_models import (Segment, SegmentIdentification,
+                               SongIdentificationResult)
+# Local/project
+from singing_detection.identification.audio_segment_utils import \
+    AudioSegmentExtractor
+from singing_detection.identification.gemini_client import GeminiClient
+from singing_detection.identification.transcription import Transcriber
+
+from .whisper_singleton import get_whisper_model
+
 
 def _get_correct_path(relative_path):
     """ Get the absolute path to resource, works for dev and for PyInstaller """
@@ -184,34 +188,7 @@ class SongIdentifier:
         )
     
     def _load_whisper_model(self):
-        """Loads the whisper model, checking for bundled version first."""
         model_name = self.whisper_model_name
-        bundled_model_dir = None
-
-        # Check if running as a PyInstaller bundle
-        if getattr(sys, 'frozen', False):
-             # Path relative to the executable where we told PyInstaller to put models
-             # This matches the destination in --add-data "...;whisper_models"
-             bundled_model_dir = _get_correct_path("whisper_models")
-             print(f"Running in bundle, checking for models in: {bundled_model_dir}")
-             # Check if the specific model file exists
-             expected_model_file = os.path.join(bundled_model_dir, f"{model_name}.pt")
-             if not os.path.exists(expected_model_file):
-                  print(f"Warning: Bundled model file not found at {expected_model_file}")
-                  bundled_model_dir = None # Fallback to default download/cache
-        else:
-             print("Not running in bundle, using default Whisper model loading.")
-
-
-        try:
-            # If bundled path exists, tell whisper to use it, otherwise use default cache
-            model_root = bundled_model_dir if bundled_model_dir else None # whisper uses default if None
-            print(f"Loading Whisper model '{model_name}' with download_root='{model_root}'")
-            # Note: Whisper's load_model might not directly accept a full file path,
-            # it usually expects a directory where it can find model_name.pt.
-            # Setting download_root tells it *where* to look or download *to*.
-            return whisper.load_model(model_name, download_root=model_root)
-        except Exception as e:
-            print(f"Error loading Whisper model: {e}")
-            # Handle error appropriately, maybe raise it or return None
-            raise 
+        bundled_model_dir = _get_correct_path("whisper_models")
+        model_root = bundled_model_dir if bundled_model_dir else None
+        return get_whisper_model(model_name, download_root=model_root) 

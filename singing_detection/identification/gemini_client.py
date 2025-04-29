@@ -1,6 +1,6 @@
+
 import requests
-from typing import Optional, Dict, Any
-import json
+
 
 class GeminiClient:
     def __init__(self, api_key: str):

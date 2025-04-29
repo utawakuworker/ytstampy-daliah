@@ -1,7 +1,11 @@
-import whisper
-from typing import Optional
-import sys
+# Standard library
 import os
+import sys
+from typing import Optional
+
+# Local/project
+from .whisper_singleton import get_whisper_model
+
 
 def _get_correct_path(relative_path):
     """ Get the absolute path to resource, works for dev and for PyInstaller """
@@ -28,15 +32,8 @@ class Transcriber:
             if not os.path.exists(expected_model_file):
                 print(f"Warning: Bundled model file not found at {expected_model_file}")
                 bundled_model_dir = None
-        else:
-            print("Not running in bundle, using default Whisper model loading.")
-        try:
-            model_root = bundled_model_dir if bundled_model_dir else None
-            print(f"Loading Whisper model '{self.model_name}' with download_root='{model_root}'")
-            return whisper.load_model(self.model_name, download_root=model_root)
-        except Exception as e:
-            print(f"Error loading Whisper model: {e}")
-            raise
+        model_root = bundled_model_dir if bundled_model_dir else None
+        return get_whisper_model(self.model_name, download_root=model_root)
 
     def transcribe(self, audio_path: str) -> Optional[str]:
         try:

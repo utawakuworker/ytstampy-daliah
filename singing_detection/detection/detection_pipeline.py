@@ -1,8 +1,8 @@
-from singing_detection.detection.feature_engineering import FeatureEngineer
+
 from singing_detection.detection.detection_engine import DetectionEngine
+from singing_detection.detection.feature_engineering import FeatureEngineer
 from singing_detection.detection.interlude_analysis import InterludeAnalyzer
-import numpy as np
-import pandas as pd
+
 
 class SingingDetectionPipeline:
     @staticmethod

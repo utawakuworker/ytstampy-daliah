@@ -1,13 +1,18 @@
-from typing import Dict, Any
-from singing_detection.audio.loader import AudioLoaderFactory
-from singing_detection.audio.feature_extraction import FeatureExtractorFacade
-from singing_detection.detection.detection_pipeline import SingingDetectionPipeline
-from singing_detection.segments.segment_processor import SegmentFilter, SegmentRefiner
-from singing_detection.identification.song_identifier import SongIdentifier
-from model.data_models import Segment, AnalysisResults
-import os
-import pandas as pd
 import json
+import os
+from typing import Any, Dict
+
+import pandas as pd
+
+from model.data_models import AnalysisResults, Segment
+from singing_detection.audio.feature_extraction import FeatureExtractorFacade
+from singing_detection.audio.loader import AudioLoaderFactory
+from singing_detection.detection.detection_pipeline import \
+    SingingDetectionPipeline
+from singing_detection.identification.song_identifier import SongIdentifier
+from singing_detection.segments.segment_processor import (SegmentFilter,
+                                                          SegmentRefiner)
+
 
 class PipelineStep:
     def run(self, context: Dict[str, Any]) -> bool:
@@ -154,12 +159,15 @@ class VisualizationStep(PipelineStep):
         processed_segments = context.get('final_segments')
         feature_df = context.get('frame_df_with_states')
         base_filename = context.get('base_filename', 'analysis')
-        output_dir = self.config.get('output_dir', './output_analysis_model')
+        self.config.get('output_dir', './output_analysis_model')
         if y is None or sr is None or processed_segments is None or feature_df is None:
             return True  # Not an error, just nothing to visualize
         try:
-            import matplotlib.pyplot as plt
-            from singing_detection.visualization.plots import plot_waveform_with_segments, plot_feature_comparison
+            pass
+
+            from singing_detection.visualization.plots import (
+                plot_feature_comparison, plot_waveform_with_segments)
+
             # Waveform plot
             plot_waveform_with_segments(y, sr, processed_segments, title=f"Detected Segments - {base_filename}")
             # plt.savefig(os.path.join(output_dir, f"{base_filename}_waveform.png"))

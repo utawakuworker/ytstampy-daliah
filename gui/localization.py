@@ -1,8 +1,9 @@
-import json
-import os
 import glob
+import json
 import locale
-from typing import List # Import List type hint
+import os
+from typing import List  # Import List type hint
+
 
 class LocalizationManager:
     """Manages loading and retrieving translated strings."""

@@ -1,12 +1,12 @@
-import numpy as np
 # import matplotlib.pyplot as plt # Removed unused import
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Dict, Optional, Any, Union
-from sklearn.cluster import KMeans
+from typing import List, Tuple
+
+import numpy as np
+# from sklearn.cluster import KMeans
 
 # Try to import UMAP, but make it optional
 try:
-    import umap
     UMAP_AVAILABLE = True
 except ImportError:
     UMAP_AVAILABLE = False
@@ -34,7 +34,6 @@ class SegmentProcessor(ABC):
         Returns:
             List of processed segments as (start, end) tuples
         """
-        pass
 
 
 class SegmentRefiner(SegmentProcessor):
@@ -352,7 +351,7 @@ class SegmentValidator(SegmentProcessor):
         # Extract parameters
         threshold = kwargs.get('threshold', 0.6)
         frame_df = kwargs.get('frame_df')
-        visualize = kwargs.get('visualize', False)
+        kwargs.get('visualize', False)
         
         # If no segments to validate, return empty list
         if not segments:
