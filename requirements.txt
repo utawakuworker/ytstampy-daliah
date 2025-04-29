@@ -1,7 +1,7 @@
 flet
 pandas
 librosa 
-hmmlearn
+pomegranate
 openai-whisper
 requests
 ffmpeg-python
