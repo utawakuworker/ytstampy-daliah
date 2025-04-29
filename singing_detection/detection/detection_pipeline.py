@@ -1,4 +1,3 @@
-
 from singing_detection.detection.detection_engine import DetectionEngine
 from singing_detection.detection.feature_engineering import FeatureEngineer
 from singing_detection.detection.interlude_analysis import InterludeAnalyzer
@@ -18,16 +17,35 @@ class SingingDetectionPipeline:
         cluster_labels, singing_cluster = FeatureEngineer.run_clustering(
             features_reduced, singing_centroid, non_singing_centroid, params
         )
-        # 4. HMM fit/predict
-        features_for_hmm = DetectionEngine.prepare_hmm_features(features_reduced, cluster_labels, singing_cluster)
-        states, posteriors, hmm_model = DetectionEngine.fit_predict_hmm(features_for_hmm, params)
-        # 5. Segment finding (for both states)
+        # 4. HMM fit/predict (Using cluster-initialized HMM)
+        # No longer need prepare_hmm_features for HMM input
+        # features_for_hmm = DetectionEngine.prepare_hmm_features(features_reduced, cluster_labels, singing_cluster)
+        states, posteriors, hmm_model, hmm_singing_state_idx = DetectionEngine.fit_predict_hmm(
+            features_reduced, 
+            cluster_labels, 
+            singing_cluster, 
+            params=params # Pass params if fit_predict_hmm uses it, otherwise optional
+        )
+
+        # Handle potential fitting failure
+        if hmm_model is None:
+            print("[Pipeline Error] HMM fitting failed. Cannot proceed with segment finding.")
+            # Return empty segments and minimal results or raise an exception
+            return [], {'error': 'HMM fitting failed'}
+
+        # 5. Segment finding (using the determined singing state)
         min_duration = params.get('min_duration', 2.0)
-        segments_state0 = DetectionEngine.find_segments(states, times, 0, min_duration)
-        segments_state1 = DetectionEngine.find_segments(states, times, 1, min_duration)
-        # 6. Segment evaluation
+        singing_segments_raw = DetectionEngine.find_segments(states, times, hmm_singing_state_idx, min_duration)
+        
+        # Note: Evaluating segments might need adjustment if it relied on the specific HMM states 0/1 before.
+        # The current evaluate_segments uses cluster_labels and centroids, so it might be okay.
+        # If evaluation needs posteriors for the *singing* state specifically, use hmm_singing_state_idx:
+        # singing_posteriors = posteriors[:, hmm_singing_state_idx]
+
+        # 6. Segment evaluation (using the raw segments found for the singing state)
         evaluated_segments = DetectionEngine.evaluate_segments(
-            segments_state0 + segments_state1, features_reduced, times, cluster_labels, singing_cluster,
+            singing_segments_raw, # Evaluate only the segments identified as singing by HMM
+            features_reduced, times, cluster_labels, singing_cluster,
             singing_ref_indices, non_singing_ref_indices, singing_centroid, non_singing_centroid
         )
         # 7. Segment merging
