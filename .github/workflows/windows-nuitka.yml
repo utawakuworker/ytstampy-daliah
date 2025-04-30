@@ -41,8 +41,7 @@ jobs:
         standalone: true
         onefile: false
         
-        include-package: pandas
-        include-package: sklearn
+        include-package: pandas, sklearn
 
         # --- Include Data Files/Dirs ---
         # Include 'locales' directory. Assumes 'locales' is in the repo root.
