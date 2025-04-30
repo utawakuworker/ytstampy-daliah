@@ -39,14 +39,10 @@ jobs:
 
         # --- Packaging Options ---
         standalone: true
-        # Start with onefile: false (folder output) for easier debugging!
-        # Change to true later if needed and everything works.
-        onefile: true
-
-        # --- Include Modules ---
-        include-module: pandas # Force inclusion of pandas
-
-        msvc: latest 
+        onefile: false
+        
+        include-package: pandas
+        include-package: sklearn
 
         # --- Include Data Files/Dirs ---
         # Include 'locales' directory. Assumes 'locales' is in the repo root.
