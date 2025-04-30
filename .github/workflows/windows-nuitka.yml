@@ -46,6 +46,8 @@ jobs:
         # --- Include Modules ---
         include-module: pandas # Force inclusion of pandas
 
+        msvc: latest 
+
         # --- Include Data Files/Dirs ---
         # Include 'locales' directory. Assumes 'locales' is in the repo root.
         # *** Verify this path is correct *** Source path relative to repo root.
