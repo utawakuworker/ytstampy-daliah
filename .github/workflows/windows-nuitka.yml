@@ -41,7 +41,7 @@ jobs:
         standalone: true
         # Start with onefile: false (folder output) for easier debugging!
         # Change to true later if needed and everything works.
-        onefile: false
+        onefile: true
 
         # --- Include Modules ---
         include-module: pandas # Force inclusion of pandas
