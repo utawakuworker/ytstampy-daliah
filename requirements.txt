@@ -2,7 +2,7 @@ flet
 pandas
 librosa 
 pomegranate
-openai-whisper
+faster-whisper
 requests
 ffmpeg-python
 scipy

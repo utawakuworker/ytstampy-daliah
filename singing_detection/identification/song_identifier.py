@@ -188,7 +188,17 @@ class SongIdentifier:
         )
     
     def _load_whisper_model(self):
-        model_name = self.whisper_model_name
-        bundled_model_dir = _get_correct_path("whisper_models")
-        model_root = bundled_model_dir if bundled_model_dir else None
-        return get_whisper_model(model_name, download_root=model_root) 
+        """ Loads the faster-whisper model using the singleton. """
+        try:
+            # Parameters like device and compute_type can be added here if needed
+            # or read from configuration.
+            # Using defaults from the singleton for now.
+            return get_whisper_model(
+                self.whisper_model_name
+                # device="cpu", # Optional: specify device
+                # compute_type="int8" # Optional: specify compute type
+            )
+        except Exception as e:
+            print(f"Failed to load faster-whisper model {self.whisper_model_name} in SongIdentifier: {e}")
+            # Handle error appropriately - perhaps raise it to stop initialization
+            raise 
