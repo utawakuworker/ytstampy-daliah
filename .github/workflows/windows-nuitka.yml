@@ -41,7 +41,8 @@ jobs:
         standalone: true
         onefile: false
         
-        include-package: pandas,sklearn
+        include-package: pandas
+        include-module: flet_desktop
 
         # --- Include Data Files/Dirs ---
         # Include 'locales' directory. Assumes 'locales' is in the repo root.
@@ -57,8 +58,6 @@ jobs:
         # --- Output ---
         # Output directory relative to repository root
         output-dir: build
-
-        nofollow-import-to: numba
 
     - name: Verify inclusions (Optional Debug Step)
       # Check if key files exist in the output directory (build\main.dist for standalone)
