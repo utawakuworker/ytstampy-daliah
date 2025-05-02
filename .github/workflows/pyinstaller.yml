@@ -1,0 +1,70 @@
+name: Build Python Executable with PyInstaller # Updated name
+
+on:
+  push:
+    branches: [ "main" ] # Trigger on push to the main branch
+
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    runs-on: windows-latest # Use the latest Windows runner
+
+    steps:
+    - name: Check out repository code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' # Choose the Python version you use
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # PyInstaller is needed for the action
+        pip install pyinstaller
+        pip install flet-desktop
+      shell: bash
+
+    # Install FFmpeg using Chocolatey
+    - name: Install Chocolatey and FFmpeg
+      uses: crazy-max/ghaction-chocolatey@v3
+      with:
+        # Installs ffmpeg system-wide on the runner
+        args: install ffmpeg -y --no-progress
+
+    - name: Build with PyInstaller Action
+      uses: sayyid5416/pyinstaller@v1 # Using the action from the marketplace example
+      with:
+        spec: main.py # Your main script
+        requirements: requirements.txt # Your requirements file
+        python_ver: '3.11' # Match Python version
+        # PyInstaller options:
+        # --onedir: Create a folder containing the executable and dependencies
+        # --add-data: Include the locales folder (syntax: SRC;DEST for Windows)
+        # --add-binary: Include ffmpeg.exe (syntax: SRC;DEST for Windows)
+        # --noconsole: Optional: Add if you want to hide the console window for a GUI app
+        options: >- # Using YAML multiline string for readability
+          --onedir,
+          --add-data "locales;locales",
+          --add-binary "C:\ProgramData\chocolatey\bin\ffmpeg.exe;."
+        # Name for the uploaded artifact (action handles upload)
+        upload_exe_with_name: ytstampy-executable-windows-standalone
+
+    - name: Verify inclusions (Optional Debug Step)
+      # Check if key files exist in the output directory (dist/main for onedir)
+      run: |
+        echo "--- Verifying build output in dist\main ---"
+        echo "Checking for ffmpeg.exe:"
+        dir dist\main\ffmpeg.exe /s /b || echo "WARNING: ffmpeg.exe not found!"
+        echo "Checking for pandas directory:"
+        dir dist\main\pandas /s /b || echo "WARNING: pandas module not found!"
+        echo "Checking for locales directory:"
+        dir dist\main\locales /s /b || echo "WARNING: locales directory not found!"
+        echo "Checking for main executable:"
+        dir dist\main\main.exe /s /b || echo "WARNING: main.exe not found!"
+      shell: cmd
+
+    # Removed the separate Upload Artifact step as the PyInstaller action handles it
