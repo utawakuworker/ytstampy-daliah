@@ -6,4 +6,4 @@ requests
 ffmpeg-python
 scipy
 scikit-learn
-
+hmmlearn
