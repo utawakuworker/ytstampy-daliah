@@ -48,7 +48,7 @@ jobs:
         # --- Include Data Files/Dirs ---
         # Include 'locales' directory. Assumes 'locales' is in the repo root.
         # *** Verify this path is correct *** Source path relative to repo root.
-        include-data-dir: locales=locales
+        include-data-dir: locales=locales,librosa/util=librosa/util
 
         # Include ffmpeg.exe from the standard Chocolatey install path
         # Source path is absolute, Destination path is relative to final .dist folder.
