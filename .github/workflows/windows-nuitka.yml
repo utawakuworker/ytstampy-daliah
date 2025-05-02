@@ -1,8 +1,8 @@
 name: Build Python Executable with Nuitka
 
 on:
-  push:
-    branches: [ "main" ] # Trigger on push to the main branch
+  #push:
+  #  branches: [ "main" ] # Trigger on push to the main branch
 
   workflow_dispatch: # Allow manual triggering
 
