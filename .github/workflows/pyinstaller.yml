@@ -50,6 +50,7 @@ jobs:
           --onedir,
           --add-data "locales;locales",
           --add-binary "C:\ProgramData\chocolatey\bin\ffmpeg.exe;."
+          --noconsole
         # Name for the uploaded artifact (action handles upload)
         upload_exe_with_name: ytstampy-executable-windows-standalone
 
