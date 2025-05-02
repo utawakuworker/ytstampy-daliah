@@ -219,70 +219,113 @@ class SegmentGroupingStep(PipelineStep):
         # Retrieve and normalize initial segments to Segment dataclass
         raw_segments = context.get('initial_segments', [])
         segments: list[Segment] = []
+        
+        # Convert all segment formats to Segment class
         for item in raw_segments:
             if isinstance(item, Segment):
                 segments.append(item)
             elif isinstance(item, (list, tuple)) and len(item) == 2:
-                # Convert tuple to Segment
                 segments.append(Segment(start=item[0], end=item[1]))
-        # If no valid segments, exit
+        
+        # If no valid segments, exit early
         feature_df = context.get('feature_df')
         if not segments or feature_df is None:
             context['final_segments'] = []
             return True
 
-        # Build summary feature vectors per segment (rms, harmonic ratio, singing probability, duration)
-        feats = []
-        for seg in segments:
-            df_seg = feature_df[(feature_df['time'] >= seg.start) & (feature_df['time'] <= seg.end)]
-            feats.append([
-                df_seg['rms_mean'].mean() if not df_seg.empty else 0.0,
-                df_seg['harmonic_ratio_mean'].mean() if 'harmonic_ratio_mean' in feature_df.columns and not df_seg.empty else 0.0,
-                df_seg['singing_probability'].mean() if 'singing_probability' in feature_df.columns and not df_seg.empty else 0.0,
-                seg.end - seg.start
-            ])
-        X = np.array(feats)
-
-        # Standardize features before clustering
-        from sklearn.preprocessing import StandardScaler
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-
-        # Cluster segments based on feature similarity using DBSCAN
-        from sklearn.cluster import DBSCAN
-        eps = self.config.get('grouping_feature_eps', 0.5)
-        min_samples = self.config.get('grouping_feature_min_samples', 1)
-        labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(X_scaled)
-
-        # Group segments by assigned cluster labels
-        clusters = {}
-        for seg, lab in zip(segments, labels):
-            clusters.setdefault(lab, []).append(seg)
-
-        # Merge temporal fragements within each cluster based on time gap
-        merge_gap = self.config.get('min_segment_gap', 1.5)
-        merged_segments = []
-        for group in clusters.values():
-            sorted_group = sorted(group, key=lambda s: s.start)
-            temp = []
-            for s in sorted_group:
-                if not temp:
-                    temp.append(s)
-                else:
-                    prev = temp[-1]
-                    if s.start - prev.end <= merge_gap:
-                        temp[-1] = Segment(prev.start, max(prev.end, s.end))
-                    else:
-                        temp.append(s)
-            merged_segments.extend(temp)
-
-        # Filter out segments shorter than configured minimum duration
-        min_dur = self.config.get('min_segment_duration', 5.0)
-        final_segments = [s for s in merged_segments if (s.end - s.start) >= min_dur]
-        final_segments.sort(key=lambda s: s.start)
-
+        print(f"[SegmentGrouping] Processing {len(segments)} initial segments")
+        
+        # Sort segments by start time for consistent processing
+        segments.sort(key=lambda s: s.start)
+        
+        # Get configuration for temporal merging
+        max_merge_gap = self.config.get('max_merge_gap', 45.0)  # Use a larger default gap
+        min_duration = self.config.get('min_segment_duration', 5.0)
+        
+        # Log segment details
+        print(f"[DIAGNOSTIC] Segment details before merging:")
+        for i, segment in enumerate(segments):
+            print(f"[DIAGNOSTIC]   {i}: {segment.start:.2f}-{segment.end:.2f} (duration: {segment.duration:.2f}s)")
+        
+        # Directly merge segments based on temporal proximity
+        final_segments = self._merge_segments_by_time(segments, min_duration, max_merge_gap)
+        
+        print(f"[SegmentGrouping] Grouped {len(segments)} initial segments into {len(final_segments)} final segments")
+        
+        # Store the results in the context
         context['final_segments'] = final_segments
         return True
+    
+    def _merge_segments_by_time(self, segments: list[Segment], min_duration: float, max_merge_gap: float) -> list[Segment]:
+        """
+        Merge segments based on temporal proximity.
+        
+        Args:
+            segments: List of segments sorted by start time
+            min_duration: Minimum duration for a merged segment
+            max_merge_gap: Maximum gap between segments to merge
+            
+        Returns:
+            List of merged segments
+        """
+        if not segments:
+            return []
+        
+        print(f"[DIAGNOSTIC] Merging {len(segments)} segments with max_merge_gap={max_merge_gap}s")
+        
+        # Begin with the first segment
+        merged_segments = []
+        current_cluster = [segments[0]]
+        
+        # Process remaining segments
+        for i in range(1, len(segments)):
+            current_segment = segments[i]
+            prev_segment = current_cluster[-1]
+            
+            # Calculate the gap between segments
+            gap = current_segment.start - prev_segment.end
+            
+            # If current segment is close enough to the previous one, add to current cluster
+            if gap <= max_merge_gap:
+                print(f"[DIAGNOSTIC] Merging: Segment gap is {gap:.2f}s ≤ {max_merge_gap}s, adding to cluster")
+                current_cluster.append(current_segment)
+            else:
+                # Create a merged segment from the current cluster
+                print(f"[DIAGNOSTIC] Not merging: Segment gap is {gap:.2f}s > {max_merge_gap}s, starting new cluster")
+                # Merge all segments in the current cluster
+                start = current_cluster[0].start
+                end = max(seg.end for seg in current_cluster)
+                
+                # Log the segments in this cluster
+                print(f"[DIAGNOSTIC] Temporal cluster contains {len(current_cluster)} segments from {start:.2f}s to {end:.2f}s")
+                if len(current_cluster) > 1:
+                    print(f"[DIAGNOSTIC]   Merging segments with start times: {[f'{s.start:.2f}' for s in current_cluster]}")
+                
+                if end - start >= min_duration:
+                    merged_segments.append(Segment(start=start, end=end))
+                    print(f"[SegmentGrouping] Created merged segment {start:.2f}-{end:.2f} from {len(current_cluster)} segments")
+                else:
+                    print(f"[SegmentGrouping] Skipped merged segment {start:.2f}-{end:.2f} (too short: {end-start:.2f}s)")
+                
+                # Start a new cluster with the current segment
+                current_cluster = [current_segment]
+        
+        # Don't forget the last cluster
+        if current_cluster:
+            start = current_cluster[0].start
+            end = max(seg.end for seg in current_cluster)
+            
+            print(f"[DIAGNOSTIC] Final temporal cluster contains {len(current_cluster)} segments from {start:.2f}s to {end:.2f}s")
+            if len(current_cluster) > 1:
+                print(f"[DIAGNOSTIC]   Merging segments with start times: {[f'{s.start:.2f}' for s in current_cluster]}")
+            
+            if end - start >= min_duration:
+                merged_segments.append(Segment(start=start, end=end))
+                print(f"[SegmentGrouping] Created merged segment {start:.2f}-{end:.2f} from {len(current_cluster)} segments")
+            else:
+                print(f"[SegmentGrouping] Skipped merged segment {start:.2f}-{end:.2f} (too short: {end-start:.2f}s)")
+        
+        return merged_segments
 
 class SegmentProcessingStep(PipelineStep):
     def __init__(self, config):

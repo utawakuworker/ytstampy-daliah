@@ -1,8 +1,9 @@
 flet
 pandas
 librosa 
-pomegranate
 faster-whisper
 requests
 ffmpeg-python
 scipy
+scikit-learn
+
