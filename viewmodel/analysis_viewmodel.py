@@ -268,8 +268,11 @@ class AnalysisViewModel:
         return self.analysis_results.identification_results if self.analysis_results else []
 
     def get_identified_songs(self) -> list:
-        """Extracts successfully identified song info from analysis results."""
-        # Use the new get_identification_results method which returns the correct list
+        """
+        Extracts song identification info from analysis results, including failed identifications.
+        Returns a list of dictionaries with song info and error messages if applicable.
+        """
+        # Use the get_identification_results method which returns the correct list
         identification_results = self.get_identification_results()
         if not identification_results:
              return []
@@ -277,51 +280,78 @@ class AnalysisViewModel:
         identified_songs = []
 
         for result in identification_results:
-            # result is now a SegmentIdentification object
-            song_info = result.identification # This is a SongIdentificationResult object or None
-
-            # Check if song_info exists and doesn't contain an error key,
-            # and has at least a title or artist to be considered successful.
-            if song_info and not song_info.error and (song_info.title or song_info.artist):
-                # Create a dictionary representation for the view/formatter if needed,
-                # including segment start time for timestamping.
-                song_data_for_output = {
+            # result is a SegmentIdentification object
+            song_info = result.identification  # This is a SongIdentificationResult object or None
+            
+            # Include all identification attempts, even failed ones
+            if song_info:
+                # Create a dictionary representation for output
+                song_data = {
                     "title": song_info.title,
                     "artist": song_info.artist,
                     "confidence": song_info.confidence,
                     "explanation": song_info.explanation,
-                    "segment_start": result.segment.start, # Get start time from Segment object
-                    "refined_lyrics": song_info.refined_lyrics_used # Pass refined lyrics too
+                    "segment_start": result.segment.start,  # Get start time from Segment object
+                    "refined_lyrics": song_info.refined_lyrics_used,  # Pass refined lyrics too
+                    "error": song_info.error  # Include any error message
                 }
-                identified_songs.append(song_data_for_output)
+                
+                # If there's an error but no title/artist, provide placeholder values
+                if song_info.error and not (song_info.title or song_info.artist):
+                    song_data["title"] = "Identification Failed"
+                    song_data["artist"] = f"Error: {song_info.error[:50]}..."  # Truncate long error messages
+                    song_data["confidence"] = "none"
+                
+                identified_songs.append(song_data)
+            else:
+                # Handle case where identification is None
+                identified_songs.append({
+                    "title": "Identification Failed",
+                    "artist": "Unknown error occurred",
+                    "confidence": "none",
+                    "segment_start": result.segment.start,
+                    "error": "No identification result available"
+                })
 
         return identified_songs
 
     def get_youtube_comment_string(self) -> str:
         """Formats identified songs into a string suitable for YouTube comments."""
-        identified_songs = self.get_identified_songs() # This now returns list of dicts with needed info
+        identified_songs = self.get_identified_songs()  # This now returns list of dicts with needed info
 
         if not identified_songs:
             return "No songs identified (segments might have been too short or identification failed)."
 
         comment_lines = ["[Detected Songs - Timestamps]"]
-        found_any = False
+        success_count = 0
+        failed_count = 0
 
         for song in identified_songs:
             start_seconds = song.get('segment_start')
             if start_seconds is not None:
-                timestamp = str(timedelta(seconds=int(start_seconds))).split('.')[0] # Format as H:MM:SS
+                timestamp = str(timedelta(seconds=int(start_seconds))).split('.')[0]  # Format as H:MM:SS
             else:
                 timestamp = "? Unknown Time ?"
 
-            title = song.get('title', 'Unknown Title')
-            artist = song.get('artist', 'Unknown Artist')
-            comment_lines.append(f"{timestamp} - {artist} - {title}")
-            found_any = True
+            # Check if this is a failed identification
+            if song.get('error'):
+                title = song.get('title', 'Identification Failed')
+                artist = song.get('artist', 'Error')
+                comment_lines.append(f"{timestamp} - ❌ {title}")
+                failed_count += 1
+            else:
+                title = song.get('title', 'Unknown Title')
+                artist = song.get('artist', 'Unknown Artist')
+                comment_lines.append(f"{timestamp} - {artist} - {title}")
+                success_count += 1
 
-        if not found_any:
-            # This case should ideally be caught by the initial check of identified_songs list
-            return "No valid songs could be formatted."
+        # Add a summary at the end
+        total = success_count + failed_count
+        if failed_count > 0:
+            comment_lines.append(f"\nIdentified {success_count} of {total} segments successfully. {failed_count} segments failed identification.")
+        
+        if success_count == 0 and failed_count > 0:
+            comment_lines.append("No songs were successfully identified.")
 
         return "\n".join(comment_lines)
 
@@ -369,3 +399,94 @@ class AnalysisViewModel:
     def run_analysis(self):
         self.result_context = self.pipeline.run()
         # ... handle result_context as needed ... 
+
+    def _show_save_feedback(self, saved_files, success=True):
+        """
+        Creates a feedback message for the UI after saving results.
+        
+        Args:
+            saved_files: List of file paths that were saved
+            success: Boolean indicating if the save was successful
+        """
+        if not saved_files or not success:
+            return False
+            
+        # Format the paths for better display
+        for i, file_path in enumerate(saved_files):
+            try:
+                # Show only filename to make message cleaner
+                saved_files[i] = os.path.basename(file_path)
+            except:
+                pass
+                
+        files_str = ", ".join(saved_files)
+        self.log_messages.append(f"[INFO] Files saved: {files_str}")
+        return True
+        
+    def save_results(self):
+        """
+        Save analysis results manually when triggered from the UI.
+        Saves segments and identification results to separate CSV files with UTF-8-SIG encoding.
+        """
+        if not self.analysis_results:
+            self._pipeline_status_update("No results to save.")
+            return False
+        
+        try:
+            # Use existing config for output directory
+            output_dir = self.config.get('output_dir', './output_analysis_gui')
+            
+            # Ensure output directory exists
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+            
+            # Generate a base filename using the current timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Save segments to CSV
+            saved_files = []
+            if self.analysis_results.final_segments:
+                import pandas as pd
+                segments_df = pd.DataFrame([
+                    {'start': seg.start, 'end': seg.end, 'duration': seg.duration}
+                    for seg in self.analysis_results.final_segments
+                ])
+                segments_csv_path = os.path.join(output_dir, f"segments_{timestamp}.csv")
+                segments_df.to_csv(segments_csv_path, index=False, encoding='utf-8-sig', float_format='%.3f')
+                saved_files.append(segments_csv_path)
+            
+            # Save song identification results to CSV if available
+            identified_songs = self.get_identified_songs()
+            if identified_songs:
+                import pandas as pd
+                songs_df = pd.DataFrame([
+                    {
+                        'segment_start': song.get('segment_start', 0),
+                        'title': song.get('title', ''),
+                        'artist': song.get('artist', ''),
+                        'confidence': song.get('confidence', ''),
+                        'error': song.get('error', '')
+                    }
+                    for song in identified_songs
+                ])
+                songs_csv_path = os.path.join(output_dir, f"identified_songs_{timestamp}.csv")
+                songs_df.to_csv(songs_csv_path, index=False, encoding='utf-8-sig')
+                saved_files.append(songs_csv_path)
+            
+            if saved_files:
+                self._pipeline_status_update(f"Results saved to {', '.join(saved_files)}")
+                success = self._show_save_feedback(saved_files)
+            else:
+                self._pipeline_status_update("No results to save.")
+                self.log_messages.append("[INFO] No results to save.")
+                success = False
+            
+            self._notify_view()
+            return success
+        except Exception as e:
+            import traceback
+            self._pipeline_status_update(f"Error saving results: {e}")
+            self.log_messages.append(f"[ERROR] Error saving results: {e}")
+            self.log_messages.append(f"[ERROR] {traceback.format_exc()}")
+            self._notify_view()
+            return False 

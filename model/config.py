@@ -34,4 +34,8 @@ DEFAULT_CONFIG = {
     'output_dir': './output_analysis_gui', # Default output dir for GUI runs
     'save_results_json': True, # Default setting for GUI checkbox
     'save_results_dataframe': True, # Default setting for GUI checkbox
+    'save_youtube_comment': True,   # Save formatted YouTube comment to text file
+    
+    # FFmpeg Settings
+    'ffmpeg_path': '', # Path to FFmpeg executable, empty means use system path
 }

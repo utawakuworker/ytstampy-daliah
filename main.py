@@ -33,7 +33,7 @@ def run_app(page: ft.Page):
     page.window.height = 1000
     # Optionally, make the window not resizable:
     # page.window.resizable = False
-    page.title = "YTStamps Revisited"
+    page.title = "UtaStamper"  # Use fixed app name without translation
     page.update()
 
     # --- Theme Check (Comment out if you have custom themes) ---
@@ -47,46 +47,6 @@ def run_app(page: ft.Page):
     # The view_model's callback will be properly assigned within build_and_set_view
     view_model = AnalysisViewModel(view_update_callback=lambda: page.update())
     print("ViewModel created.")
-
-    # --- Language Change Handler ---
-    def change_language(e):
-        selected_lang = e.control.value
-        print(f"--- change_language called: {selected_lang} ---")
-        loc_manager.set_language(selected_lang)
-        build_and_set_view()
-        # Ensure dropdown visually updates if fallback occurred in set_language
-        # This assumes lang_dropdown is accessible here.
-        # Check if the manager's current lang differs from selection after potential fallback
-        if lang_dropdown.value != loc_manager.get_current_language():
-             lang_dropdown.value = loc_manager.get_current_language()
-             print(f"Dropdown value reset to {lang_dropdown.value} after potential fallback.")
-        page.update()
-        print("--- change_language finished ---")
-
-    # --- Language Dropdown Definition ---
-    # Moved definition inside run_app to ensure it's recreated if needed,
-    # though currently it's only created once.
-    lang_dropdown = ft.Dropdown(
-        value=loc_manager.get_current_language(), # Set initial value
-        options=[
-            ft.dropdown.Option(lang)
-            for lang in loc_manager.get_available_languages() # Get available languages
-        ],
-        on_change=change_language,
-        width=100,
-        tooltip="Select Language" # Add key: "select_language_tooltip"
-    )
-    print(f"lang_dropdown defined. Options count: {len(lang_dropdown.options)}")
-
-    # --- App Bar Definition and ASSIGNMENT ---
-    # This line assigns the created AppBar to the page's appbar property.
-    # It MUST be executed for the AppBar to appear.
-    page.appbar = ft.AppBar(
-        # title=ft.Text(loc_manager.tr("app_title")), # Use initial language for title
-        actions=[lang_dropdown], # Add the dropdown to the AppBar
-    )
-    print(f"AppBar assigned. Actions count: {len(page.appbar.actions)}")
-    page.update()
 
     # ---> Explicit Update after AppBar assignment <---
     print("Attempting explicit page update after AppBar assignment...")

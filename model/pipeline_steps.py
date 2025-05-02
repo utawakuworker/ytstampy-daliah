@@ -15,6 +15,23 @@ from singing_detection.identification.song_identifier import SongIdentifier
 from singing_detection.segments.segment_processor import (SegmentFilter,
                                                           SegmentRefiner)
 
+# Helper function to format seconds into hh:mm:ss.ms
+# Copied from app_view.py for use in SaveResultsStep
+def format_seconds_to_hms(total_seconds: float) -> str:
+    if total_seconds is None or total_seconds < 0:
+        return "0:00.000"
+    try:
+        td = pd.Timedelta(seconds=total_seconds)
+        total_secs_int = int(td.total_seconds())
+        milliseconds = int((td.total_seconds() - total_secs_int) * 1000)
+        hours, remainder = divmod(total_secs_int, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours > 0:
+            return f"{hours}:{minutes:02}:{seconds:02}.{milliseconds:03}"
+        else:
+            return f"{minutes:02}:{seconds:02}.{milliseconds:03}"
+    except Exception:
+        return "0:00.000"
 
 class PipelineStep:
     def run(self, context: Dict[str, Any]) -> bool:
@@ -404,7 +421,8 @@ class SongIdentificationStep(PipelineStep):
             audio_path=audio_path,
             output_dir=self.config.get('output_dir', './output_analysis_model'),
             whisper_model=self.config.get('whisper_model', 'base'),
-            gemini_api_key=api_key
+            gemini_api_key=api_key,
+            ffmpeg_path=self.config.get('ffmpeg_path', '')
         )
         identification_results = identifier.identify_songs(
             segments=final_segments,
@@ -552,37 +570,76 @@ class SaveResultsStep(PipelineStep):
         self.config = config
 
     def run(self, context: Dict[str, Any]) -> bool:
-        base_filename = context.get('base_filename')
-        output_dir = self.config.get('output_dir', './output_analysis_model')
+        output_dir = self.config.get('output_dir', '.')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Get base filename from audio path or default
+        audio_path = context.get('audio_path', 'analysis_results')
+        base_filename = os.path.splitext(os.path.basename(audio_path))[0]
+
+        saved_files = []
         final_segments = context.get('final_segments', [])
         identification_results = context.get('identification_results', [])
-        total_duration = context.get('total_duration')
-        if not base_filename:
-            return True  # Nothing to save
-        # Save CSV
-        if self.config.get('save_results_dataframe', False):
-            try:
-                if final_segments:
-                    segments_df = pd.DataFrame([
-                        {'start': seg.start, 'end': seg.end, 'duration': seg.duration}
-                        for seg in final_segments
-                    ])
-                    csv_path = os.path.join(output_dir, f"{base_filename}_segments.csv")
-                    segments_df.to_csv(csv_path, index_label='segment_index', float_format='%.3f')
-            except Exception as e:
-                print(f"Warning: Failed to save CSV results: {e}")
-        # Save JSON
-        if self.config.get('save_results_json', False):
-            try:
-                results_obj = AnalysisResults(
-                    total_duration=total_duration,
-                    final_segments=final_segments,
-                    identification_results=identification_results
-                )
-                serializable_data = dataclasses.asdict(results_obj)
-                json_path = os.path.join(output_dir, f"{base_filename}_results.json")
-                with open(json_path, 'w', encoding='utf-8') as f:
-                    json.dump(serializable_data, f, indent=4, default=str)
-            except Exception:
-                pass
+
+        # --- Save DataFrame CSV --- 
+        if self.config.get('save_results_dataframe', False) and final_segments:
+            df_data = []
+            for i, seg in enumerate(final_segments):
+                 df_data.append({
+                     'segment_num': i + 1,
+                     'start_seconds': seg.start,
+                     'end_seconds': seg.end,
+                     'duration_seconds': seg.duration
+                 })
+            segments_df = pd.DataFrame(df_data)
+            csv_path = os.path.join(output_dir, f"{base_filename}_segments.csv")
+            segments_df.to_csv(csv_path, index=False)
+            saved_files.append(csv_path)
+
+        # --- Save JSON --- 
+        if self.config.get('save_results_json', False) and (final_segments or identification_results):
+             results_dict = dataclasses.asdict(AnalysisResults(
+                 total_duration=context.get('total_duration'),
+                 final_segments=final_segments,
+                 identification_results=identification_results
+             ))
+             json_path = os.path.join(output_dir, f"{base_filename}_results.json")
+             with open(json_path, 'w', encoding='utf-8') as f:
+                 json.dump(results_dict, f, indent=4, ensure_ascii=False)
+             saved_files.append(json_path)
+             
+        # --- Save YouTube Comment TXT --- 
+        if self.config.get('save_youtube_comment', False) and identification_results:
+            comment_lines = []
+            for idx, result in enumerate(identification_results):
+                seg = result.segment
+                timestamp = format_seconds_to_hms(seg.start)
+                # Check for error within the nested identification object
+                if result.identification and result.identification.error:
+                    line = f"{timestamp} Error: {result.identification.error}" # Include 'Error:' prefix for clarity
+                # Check for identified song within the nested identification object
+                elif result.identification and (result.identification.title or result.identification.artist):
+                    # Access title and artist from the nested identification object
+                    title = result.identification.title or "Unknown Title"
+                    artist = result.identification.artist or "Unknown Artist"
+                    line = f"{timestamp} {title} - {artist}"
+                else:
+                    # Handle case where there's no error but no song either
+                    line = f"{timestamp} Unknown Song (No identification attempt or result)" # More specific message
+                comment_lines.append(line)
+            
+            if comment_lines:
+                comment_text = "\n".join(comment_lines)
+                txt_path = os.path.join(output_dir, f"{base_filename}_comment.txt")
+                try:
+                    with open(txt_path, 'w', encoding='utf-8') as f:
+                        f.write(comment_text)
+                    saved_files.append(txt_path)
+                except IOError as e:
+                     print(f"Error saving comment file: {e}")
+                     context['error'] = f"Error saving comment file: {e}"
+                     # Optionally decide if this error should stop the pipeline (return False)
+                     # For now, just log it and continue.
+
+        context['saved_files'] = saved_files
         return True 

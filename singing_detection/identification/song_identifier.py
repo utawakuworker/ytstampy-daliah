@@ -44,7 +44,8 @@ class SongIdentifier:
                  audio_path: str,
                  output_dir: Optional[str] = None,
                  whisper_model: str = "small",
-                 gemini_api_key: Optional[str] = None):
+                 gemini_api_key: Optional[str] = None,
+                 ffmpeg_path: Optional[str] = None):
         """
         Initialize the song identifier.
         
@@ -53,11 +54,13 @@ class SongIdentifier:
             output_dir: Directory for temporary files and results
             whisper_model: Whisper model size ("tiny", "base", "small", "medium", "large")
             gemini_api_key: Gemini API key
+            ffmpeg_path: Path to ffmpeg executable (optional)
         """
         self.audio_path = audio_path
         self.output_dir = output_dir or tempfile.gettempdir()
         self.whisper_model_name = whisper_model
         self.gemini_api_key = gemini_api_key or os.environ.get("GEMINI_API_KEY")
+        self.ffmpeg_path = ffmpeg_path
         
         # Create output directory if it doesn't exist
         if not os.path.exists(self.output_dir):
@@ -78,7 +81,7 @@ class SongIdentifier:
                 print(msg)
 
         results: List[SegmentIdentification] = []
-        segment_extractor = AudioSegmentExtractor(self.audio_path, self.output_dir)
+        segment_extractor = AudioSegmentExtractor(self.audio_path, self.output_dir, ffmpeg_path=self.ffmpeg_path)
         transcriber = Transcriber(self.whisper_model_name)
         gemini = GeminiClient(self.gemini_api_key)
         for i, segment in enumerate(segments):
