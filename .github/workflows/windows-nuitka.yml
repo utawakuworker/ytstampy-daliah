@@ -42,7 +42,7 @@ jobs:
         standalone: true
         onefile: false
         
-        include-package: pandas
+        include-package: pandas,librosa
         include-module: flet_desktop
 
         # --- Include Data Files/Dirs ---
