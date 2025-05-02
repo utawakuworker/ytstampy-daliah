@@ -3,6 +3,8 @@ import os
 from typing import Any, Dict
 
 import pandas as pd
+import numpy as np
+import dataclasses
 
 from model.data_models import AnalysisResults, Segment
 from singing_detection.audio.feature_extraction import FeatureExtractorFacade
@@ -41,10 +43,12 @@ class FeatureExtractionStep(PipelineStep):
 
     def run(self, context: Dict[str, Any]) -> bool:
         enable_hpss_flag = self.config.get('enable_hpss', True)
+        analysis_window = self.config.get('analysis_window_seconds', 2.0)
+        print(f"[Feature Extraction] Using analysis window size: {analysis_window}s")
         extractor = FeatureExtractorFacade(
             include_pitch=False,
             enable_hpss=enable_hpss_flag,
-            window_size_seconds=2.0
+            window_size_seconds=analysis_window
         )
         feature_df = extractor.extract_all_features(
             context['y'], context['sr']
@@ -64,12 +68,23 @@ class SegmentDetectionStep(PipelineStep):
             context['initial_segments'] = []
             context['frame_df_with_states'] = None
             return True
-        ref_dur = self.config.get('ref_duration', 2.0)
+        feature_df = context['feature_df']
+        ref_dur = self.config.get('analysis_window_seconds', 2.0)
+        print(f"[Segment Detection] Using reference duration: {ref_dur}s")
         sing_start = self.config.get('singing_ref_time', 0)
         nsing_start = self.config.get('non_singing_ref_time', 0)
         total_dur = context.get('total_duration', float('inf'))
         singing_ref = (max(0, sing_start), min(total_dur, sing_start + ref_dur))
         non_singing_ref = (max(0, nsing_start), min(total_dur, nsing_start + ref_dur))
+
+        # --- Reference-based energy normalization ---
+        singing_mask = (feature_df['time'] >= singing_ref[0]) & (feature_df['time'] <= singing_ref[1])
+        non_singing_mask = (feature_df['time'] >= non_singing_ref[0]) & (feature_df['time'] <= non_singing_ref[1])
+        singing_energy = feature_df.loc[singing_mask, 'rms_mean'].mean()
+        non_singing_energy = feature_df.loc[non_singing_mask, 'rms_mean'].mean()
+        normalized_energy = (feature_df['rms_mean'] - non_singing_energy) / (singing_energy - non_singing_energy + 1e-8)
+        normalized_energy = normalized_energy.clip(0, 1)
+
         params = {
             'threshold': self.config.get('hmm_threshold', 0.55),
             'min_duration': self.config.get('min_segment_duration', 10.0),
@@ -79,13 +94,194 @@ class SegmentDetectionStep(PipelineStep):
             'verbose': False
         }
         segments, results = SingingDetectionPipeline.run(
-            context['feature_df'],
+            feature_df,
             singing_ref, non_singing_ref, params
         )
-        context['initial_segments'] = segments
-        # Optionally, you can reconstruct a DataFrame similar to frame_df_with_states if needed
-        # For now, just store the results dict
-        context['frame_df_with_states'] = results
+
+        # --- HMM-based Viterbi segmentation ---
+        posteriors = results.get('posteriors')
+        states = results.get('states')
+        # Get the cluster identified by the pipeline (might be incorrect)
+        reported_singing_cluster = results.get('singing_cluster', 1) 
+        
+        if states is not None:
+            # --- Verification: Determine actual singing cluster using references ---
+            times = feature_df['time'].values
+            states_arr = np.array(states)
+            
+            singing_ref_mask = (times >= singing_ref[0]) & (times <= singing_ref[1])
+            # non_singing_ref_mask = (times >= non_singing_ref[0]) & (times <= non_singing_ref[1])
+
+            if np.any(singing_ref_mask):
+                # Find the most frequent state during the singing reference period
+                states_in_singing_ref = states_arr[singing_ref_mask]
+                unique_states, counts = np.unique(states_in_singing_ref, return_counts=True)
+                actual_singing_cluster = unique_states[np.argmax(counts)]
+                print(f"[Verification] Pipeline reported singing cluster: {reported_singing_cluster}")
+                print(f"[Verification] Actual singing cluster based on reference period: {actual_singing_cluster}")
+                if actual_singing_cluster != reported_singing_cluster:
+                    print(f"[Verification] Overriding pipeline cluster with reference-based cluster.")
+            else:
+                print("[Verification] Warning: Singing reference period has no corresponding frames. Using pipeline default.")
+                actual_singing_cluster = reported_singing_cluster
+            # --- End Verification ---
+            
+            singing_segments_viterbi = []
+            non_singing_segments_viterbi = [] # Also track non-singing for potential analysis
+            in_segment = False
+            current_segment_state = -1 # Initialize with an invalid state
+
+            # --- Use actual_singing_cluster for segment extraction ---
+            for i, state in enumerate(states):
+                # Use the verified singing cluster index here
+                is_singing_state = (state == actual_singing_cluster) 
+
+                if not in_segment and is_singing_state:
+                    # Start of a singing segment
+                    start_idx = i
+                    in_segment = True
+                    # Use the verified singing cluster index here
+                    current_segment_state = actual_singing_cluster 
+                elif not in_segment and not is_singing_state:
+                    # Start of a non-singing segment
+                    start_idx = i
+                    in_segment = True
+                    current_segment_state = state # Store the actual non-singing state
+                elif in_segment and is_singing_state and current_segment_state != actual_singing_cluster:
+                    # Transition from non-singing to singing
+                    end_idx = i - 1
+                    # Check if indices are valid before accessing time
+                    if start_idx >= 0 and end_idx >= start_idx:
+                        start_time = feature_df['time'].iloc[start_idx]
+                        end_time = feature_df['time'].iloc[end_idx]
+                        if end_time - start_time >= params['min_duration']:
+                            non_singing_segments_viterbi.append(Segment(start=start_time, end=end_time))
+                    # Start the new singing segment
+                    start_idx = i
+                     # Use the verified singing cluster index here
+                    current_segment_state = actual_singing_cluster
+                elif in_segment and not is_singing_state and current_segment_state == actual_singing_cluster:
+                     # Transition from singing to non-singing
+                    end_idx = i - 1
+                     # Check if indices are valid before accessing time
+                    if start_idx >= 0 and end_idx >= start_idx:
+                        start_time = feature_df['time'].iloc[start_idx]
+                        end_time = feature_df['time'].iloc[end_idx]
+                        if end_time - start_time >= params['min_duration']:
+                            singing_segments_viterbi.append(Segment(start=start_time, end=end_time))
+                     # Start the new non-singing segment
+                    start_idx = i
+                    current_segment_state = state
+
+            # Handle the segment at the end of the audio
+            if in_segment and start_idx >= 0:
+                end_idx = len(states) - 1
+                start_time = feature_df['time'].iloc[start_idx]
+                end_time = feature_df['time'].iloc[end_idx]
+                segment_duration = end_time - start_time
+                if segment_duration >= params['min_duration']:
+                    segment = Segment(start=start_time, end=end_time)
+                     # Use the verified singing cluster index here
+                    if current_segment_state == actual_singing_cluster:
+                        singing_segments_viterbi.append(segment)
+                    else:
+                        non_singing_segments_viterbi.append(segment)
+
+            context['initial_segments'] = singing_segments_viterbi # Store Segment objects directly
+            context['non_singing_segments'] = non_singing_segments_viterbi  # For analysis if needed
+            
+            # Store the actual singing cluster used
+            results['actual_singing_cluster'] = actual_singing_cluster 
+            context['frame_df_with_states'] = results # Keep the raw results
+            
+            # Extract posteriors for the actual singing cluster
+            if posteriors is not None and posteriors.shape[1] > actual_singing_cluster: 
+                P_hmm_singing = posteriors[:, actual_singing_cluster]
+                results['hmm_singing_prob'] = P_hmm_singing.tolist()
+            # Remove fallback? Or keep it? If verification fails, actual_singing_cluster might be default 1
+            # elif posteriors is not None and posteriors.shape[1] == 2: 
+            #      P_hmm_singing = posteriors[:, 1]
+            #      results['hmm_singing_prob'] = P_hmm_singing.tolist()
+
+        else:
+            # If no states (e.g., HMM failed), use the initial segments if any
+            initial_segments_tuples = segments # Assuming 'segments' are tuples (start, end)
+            context['initial_segments'] = [Segment(start=s[0], end=s[1]) for s in initial_segments_tuples]
+            context['non_singing_segments'] = []
+            context['frame_df_with_states'] = results
+        return True
+
+class SegmentGroupingStep(PipelineStep):
+    def __init__(self, config):
+        self.config = config
+
+    def run(self, context: Dict[str, Any]) -> bool:
+        # Retrieve and normalize initial segments to Segment dataclass
+        raw_segments = context.get('initial_segments', [])
+        segments: list[Segment] = []
+        for item in raw_segments:
+            if isinstance(item, Segment):
+                segments.append(item)
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                # Convert tuple to Segment
+                segments.append(Segment(start=item[0], end=item[1]))
+        # If no valid segments, exit
+        feature_df = context.get('feature_df')
+        if not segments or feature_df is None:
+            context['final_segments'] = []
+            return True
+
+        # Build summary feature vectors per segment (rms, harmonic ratio, singing probability, duration)
+        feats = []
+        for seg in segments:
+            df_seg = feature_df[(feature_df['time'] >= seg.start) & (feature_df['time'] <= seg.end)]
+            feats.append([
+                df_seg['rms_mean'].mean() if not df_seg.empty else 0.0,
+                df_seg['harmonic_ratio_mean'].mean() if 'harmonic_ratio_mean' in feature_df.columns and not df_seg.empty else 0.0,
+                df_seg['singing_probability'].mean() if 'singing_probability' in feature_df.columns and not df_seg.empty else 0.0,
+                seg.end - seg.start
+            ])
+        X = np.array(feats)
+
+        # Standardize features before clustering
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # Cluster segments based on feature similarity using DBSCAN
+        from sklearn.cluster import DBSCAN
+        eps = self.config.get('grouping_feature_eps', 0.5)
+        min_samples = self.config.get('grouping_feature_min_samples', 1)
+        labels = DBSCAN(eps=eps, min_samples=min_samples).fit_predict(X_scaled)
+
+        # Group segments by assigned cluster labels
+        clusters = {}
+        for seg, lab in zip(segments, labels):
+            clusters.setdefault(lab, []).append(seg)
+
+        # Merge temporal fragements within each cluster based on time gap
+        merge_gap = self.config.get('min_segment_gap', 1.5)
+        merged_segments = []
+        for group in clusters.values():
+            sorted_group = sorted(group, key=lambda s: s.start)
+            temp = []
+            for s in sorted_group:
+                if not temp:
+                    temp.append(s)
+                else:
+                    prev = temp[-1]
+                    if s.start - prev.end <= merge_gap:
+                        temp[-1] = Segment(prev.start, max(prev.end, s.end))
+                    else:
+                        temp.append(s)
+            merged_segments.extend(temp)
+
+        # Filter out segments shorter than configured minimum duration
+        min_dur = self.config.get('min_segment_duration', 5.0)
+        final_segments = [s for s in merged_segments if (s.end - s.start) >= min_dur]
+        final_segments.sort(key=lambda s: s.start)
+
+        context['final_segments'] = final_segments
         return True
 
 class SegmentProcessingStep(PipelineStep):
@@ -93,27 +289,54 @@ class SegmentProcessingStep(PipelineStep):
         self.config = config
 
     def run(self, context: Dict[str, Any]) -> bool:
-        initial_segments = context.get('initial_segments')
-        if initial_segments is None or not initial_segments:
+        # Re-enabled: This step refines/filters segments after grouping
+        # Takes grouped_segments as input
+        grouped_segments = context.get('final_segments')
+        if not grouped_segments:
             context['final_segments'] = []
+            print("[SegmentProcessing] No segments found after grouping step. Skipping processing.")
             return True
+        print(f"[SegmentProcessing] Starting processing on {len(grouped_segments)} segments from grouping step.")
+
+        # Convert Segment objects to list of (start, end) tuples for processors
+        segment_tuples = [(seg.start, seg.end) for seg in grouped_segments]
+        # Initialize refiner and filter
         segment_refiner = SegmentRefiner()
         segment_filter = SegmentFilter()
-        refined_segments = segment_refiner.process_segments(
-            segments=initial_segments,
-            y=context['y'],
-            sr=context['sr']
-        )
-        filtered_segments = segment_filter.process_segments(
-            segments=refined_segments,
-            y=context['y'],
-            sr=context['sr'],
-            min_duration=self.config.get('min_segment_duration', 5.0),
-            merge_threshold=self.config.get('merge_threshold', 0.5),
-            verbose=False
-        )
-        final_segment_objects = [Segment(start=s[0], end=s[1]) for s in filtered_segments]
-        context['final_segments'] = final_segment_objects
+
+        try:
+            refined_tuples = segment_refiner.process_segments(
+                segments=segment_tuples,
+                y=context['y'],
+                sr=context['sr']
+            )
+            print(f"[SegmentProcessing] Refined {len(segment_tuples)} segments into {len(refined_tuples)} segments.")
+        except Exception as e:
+            print(f"[SegmentProcessing] Error during segment refinement: {e}. Using segments before refinement.")
+            refined_tuples = segment_tuples
+
+        # Convert back to Segment objects
+        refined_segments = [Segment(start=s, end=e) for (s, e) in refined_tuples]
+
+        # Filter segments (e.g., remove short ones, merge close ones based on min_gap)
+        try:
+            filtered_tuples = segment_filter.process_segments(
+                segments=[(seg.start, seg.end) for seg in refined_segments],
+                y=context['y'],
+                sr=context['sr'],
+                min_duration=self.config.get('min_segment_duration', 5.0),
+                min_gap_for_merge=self.config.get('min_segment_gap', 1.5),
+                verbose=False
+            )
+            print(f"[SegmentProcessing] Filtered {len(refined_segments)} segments into {len(filtered_tuples)} segments.")
+        except Exception as e:
+            print(f"[SegmentProcessing] Error during segment filtering/merging: {e}. Using segments before filtering.")
+            filtered_tuples = [(seg.start, seg.end) for seg in refined_segments]
+
+        # Convert back to Segment objects
+        filtered_segments = [Segment(start=s, end=e) for (s, e) in filtered_tuples]
+
+        context['final_segments'] = filtered_segments
         return True
 
 class SongIdentificationStep(PipelineStep):
@@ -149,6 +372,59 @@ class SongIdentificationStep(PipelineStep):
         context['identification_results'] = identification_results
         return True
 
+# --- Visualization utility for Viterbi path vs. audio ---
+def plot_viterbi_vs_audio(y, sr, times, states, singing_cluster, 
+                          singing_viterbi_segments=None, 
+                          non_singing_viterbi_segments=None, 
+                          posteriors=None, save_path=None):
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import os
+    plt.figure(figsize=(15, 6))
+    
+    # Plot waveform
+    t_audio = np.arange(len(y)) / sr
+    plt.plot(t_audio, y / np.max(np.abs(y)), color='gray', alpha=0.5, label='Waveform')
+    
+    # Plot Viterbi path (binary: singing vs non-singing)
+    is_singing_state = (np.array(states) == singing_cluster).astype(int)
+    plt.step(times, is_singing_state, where='post', color='blue', alpha=0.6, label=f'Viterbi State (=={singing_cluster}?)')
+    
+    # Optional: plot HMM singing posterior
+    if posteriors is not None:
+        plt.plot(times, posteriors, color='orange', alpha=0.7, label='HMM Singing Posterior')
+        
+    # Optional: plot Viterbi-derived singing segments as shaded regions
+    if singing_viterbi_segments is not None:
+        for i, seg in enumerate(singing_viterbi_segments):
+            plt.axvspan(seg.start, seg.end, color='green', alpha=0.2, label='Viterbi Singing Seg' if i == 0 else "")
+
+    # Optional: plot Viterbi-derived non-singing segments as shaded regions
+    if non_singing_viterbi_segments is not None:
+        for i, seg in enumerate(non_singing_viterbi_segments):
+            plt.axvspan(seg.start, seg.end, color='red', alpha=0.15, label='Viterbi Non-Singing Seg' if i == 0 else "")
+
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude / State / Probability')
+    plt.title('Viterbi Path & Segments vs. Audio')
+    plt.legend()
+    plt.ylim(-1.05, 1.05) # Ensure waveform and binary state/probability fit well
+    plt.tight_layout()
+    
+    if save_path:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        print(f"[Viterbi Visualization] Attempting to save to {save_path}")
+        try:
+            plt.savefig(save_path)
+            print(f"[Viterbi Visualization] Saved to {save_path}")
+        except Exception as e:
+            print(f"[Viterbi Visualization] Error saving plot: {e}")
+        finally:
+             plt.close() # Close the figure regardless of saving success
+    else:
+        plt.show()
+        plt.close() # Close the figure after showing
+
 class VisualizationStep(PipelineStep):
     def __init__(self, config):
         self.config = config
@@ -156,31 +432,77 @@ class VisualizationStep(PipelineStep):
     def run(self, context: Dict[str, Any]) -> bool:
         y = context.get('y')
         sr = context.get('sr')
-        processed_segments = context.get('final_segments')
-        feature_df = context.get('frame_df_with_states')
+        final_segments = context.get('final_segments') # Segments after grouping/processing
+        initial_segments = context.get('initial_segments') # Segments directly from Viterbi (singing)
+        non_singing_segments = context.get('non_singing_segments') # Segments directly from Viterbi (non-singing)
+        feature_df = context.get('feature_df')
         base_filename = context.get('base_filename', 'analysis')
-        self.config.get('output_dir', './output_analysis_model')
-        if y is None or sr is None or processed_segments is None or feature_df is None:
-            return True  # Not an error, just nothing to visualize
-        try:
-            pass
+        output_dir = self.config.get('output_dir', './output_analysis_model')
+        
+        if y is None or sr is None or feature_df is None:
+            print("[Visualization] Missing required base data (y, sr, feature_df) for visualization.")
+            return True # Not an error, just nothing to visualize
 
+        # --- Standard Plots (using final segments) ---
+        try:
             from singing_detection.visualization.plots import (
                 plot_feature_comparison, plot_waveform_with_segments)
 
-            # Waveform plot
-            plot_waveform_with_segments(y, sr, processed_segments, title=f"Detected Segments - {base_filename}")
-            # plt.savefig(os.path.join(output_dir, f"{base_filename}_waveform.png"))
-            # plt.close()
-            # Feature comparison plot
-            plot_feature_comparison(feature_df, processed_segments, features=['rms_mean', 'harmonic_ratio_mean', 'singing_probability', 'hmm_state'])
-            # plt.savefig(os.path.join(output_dir, f"{base_filename}_features.png"))
-            # plt.close()
-        except ImportError:
-            pass  # Visualization skipped if matplotlib not available
-        except Exception:
-            pass  # Ignore visualization errors for pipeline robustness
-        return True
+            # Waveform plot with FINAL segments
+            if final_segments is not None:
+                 plot_waveform_with_segments(y, sr, final_segments, title=f"Detected Final Segments - {base_filename}")
+            else:
+                 print("[Visualization] No final segments to plot on waveform.")
+
+
+            # Feature comparison plot (can use final_segments or initial_segments depending on desired analysis)
+            # Using final_segments for now as it represents the 'result'
+            if final_segments is not None:
+                plot_feature_comparison(feature_df, final_segments, features=['rms_mean', 'harmonic_ratio_mean', 'singing_probability', 'hmm_state'])
+            else:
+                 print("[Visualization] No final segments for feature comparison plot.")
+
+        except ImportError as e:
+            print(f"[Visualization] ImportError for standard plots: {e}. Skipping standard plots.")
+        except Exception as e:
+            print(f"[Visualization] Exception during standard plots: {e}")
+            # Don't raise, try Viterbi plot next
+
+        # --- Viterbi path vs. audio visualization (using initial Viterbi segments) ---
+        try:
+            results = context.get('frame_df_with_states')
+            print(f"[Viterbi Visualization] Checking data: results: {results is not None}, 'states' in results: {'states' in results if results else False}, 'singing_cluster' in results: {'singing_cluster' in results if results else False}")
+            
+            if results is not None and 'states' in results and 'singing_cluster' in results:
+                times = feature_df['time'].values
+                states = results['states']
+                singing_cluster = results['singing_cluster']
+                posteriors = results.get('hmm_singing_prob') # Already extracted in detection step
+                
+                save_path = os.path.join(output_dir, f'{base_filename}_viterbi_vs_audio.png')
+                
+                print(f"[Viterbi Visualization] Plotting with {len(initial_segments or [])} initial singing and {len(non_singing_segments or [])} initial non-singing segments.")
+                
+                plot_viterbi_vs_audio(
+                    y, sr, times, states, singing_cluster, 
+                    singing_viterbi_segments=initial_segments, # Pass initial singing segments
+                    non_singing_viterbi_segments=non_singing_segments, # Pass initial non-singing segments
+                    posteriors=posteriors, 
+                    save_path=save_path
+                )
+            else:
+                 print("[Viterbi Visualization] Missing HMM state results ('states', 'singing_cluster') in context. Skipping Viterbi plot.")
+
+        except ImportError as e:
+            # This specific import is now inside plot_viterbi_vs_audio
+            print(f"[Viterbi Visualization] ImportError: {e}. Skipping Viterbi plot.") 
+            pass 
+        except Exception as e:
+            print(f"[Viterbi Visualization] Exception during Viterbi plot: {e}")
+            # Decide if this should be fatal; for now, just report it.
+            # raise # Uncomment to make plotting errors fatal
+
+        return True # Return True even if plotting fails, as core analysis might be okay
 
 class SaveResultsStep(PipelineStep):
     def __init__(self, config):
@@ -204,8 +526,8 @@ class SaveResultsStep(PipelineStep):
                     ])
                     csv_path = os.path.join(output_dir, f"{base_filename}_segments.csv")
                     segments_df.to_csv(csv_path, index_label='segment_index', float_format='%.3f')
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"Warning: Failed to save CSV results: {e}")
         # Save JSON
         if self.config.get('save_results_json', False):
             try:
@@ -214,7 +536,6 @@ class SaveResultsStep(PipelineStep):
                     final_segments=final_segments,
                     identification_results=identification_results
                 )
-                import dataclasses
                 serializable_data = dataclasses.asdict(results_obj)
                 json_path = os.path.join(output_dir, f"{base_filename}_results.json")
                 with open(json_path, 'w', encoding='utf-8') as f:

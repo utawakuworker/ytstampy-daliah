@@ -47,8 +47,14 @@ class AppView(ft.View):
         ref_names = [
             "status_text", "progress_bar", "start_button", "save_button", "log_view", "segments_table", "songs_table",
             "summary_text", "source_type", "file_path", "url", "output_dir", "sing_ref_time", "non_sing_ref_time",
-            "ref_duration", "hmm_threshold", "min_segment_duration", "min_segment_gap", "n_components",
-            "min_duration_for_id", "whisper_model", "enable_hpss", "api_key", "visualize", "save_json", "save_csv",
+            "hmm_threshold",
+            "min_duration_for_id", "max_duration_for_id",
+            "whisper_model", "enable_hpss", "api_key",
+            "save_json", "save_csv",
+            "analysis_window_seconds",
+            "temporal_weight", "feature_weight", "max_time_gap",
+            "affinity_damping",
+            "avg_song_duration_heuristic_sec",
             "config_panel", "browse_file_button", "select_dir_button", "copy_comment_button"
         ]
         for name in ref_names:
@@ -90,10 +96,17 @@ class AppView(ft.View):
     @property
     def config_refs(self) -> List[ft.Ref]:
         return [
-            self.file_path_ref, self.url_ref, self.output_dir_ref, self.sing_ref_time_ref, self.non_sing_ref_time_ref,
-            self.ref_duration_ref, self.hmm_threshold_ref, self.min_segment_duration_ref, self.min_segment_gap_ref,
-            self.n_components_ref, self.min_duration_for_id_ref, self.whisper_model_ref, self.enable_hpss_ref,
-            self.api_key_ref, self.visualize_ref, self.save_json_ref, self.save_csv_ref
+            self.file_path_ref, self.url_ref, self.output_dir_ref,
+            self.sing_ref_time_ref, self.non_sing_ref_time_ref,
+            self.analysis_window_seconds_ref,
+            self.hmm_threshold_ref,
+            self.enable_hpss_ref,
+            self.temporal_weight_ref, self.feature_weight_ref, self.max_time_gap_ref,
+            self.affinity_damping_ref,
+            self.avg_song_duration_heuristic_sec_ref,
+            self.min_duration_for_id_ref, self.max_duration_for_id_ref,
+            self.whisper_model_ref, self.api_key_ref,
+            self.save_json_ref, self.save_csv_ref,
         ]
 
     @property
@@ -139,49 +152,99 @@ class AppView(ft.View):
         )
 
     def _build_config_section(self) -> ft.ExpansionPanelList:
-        def make_config_field(ref, config_key, label_key, width=150, keyboard_type=ft.KeyboardType.NUMBER, is_dropdown=False, dropdown_options=None, is_checkbox=False, is_password=False, expand=False):
+        # --- make_config_field Helper (Updated) ---
+        def make_config_field(ref, config_key, label_key, col_spans: Dict[str, int], keyboard_type=ft.KeyboardType.TEXT, is_dropdown=False, dropdown_options=None, is_checkbox=False, is_password=False, expand=False):
+            common_tooltip = self.tr(label_key + "_tooltip", default="") # Use default if tooltip missing
+            control = None # Initialize control
+
             if is_dropdown:
-                return ft.Dropdown(
+                control = ft.Dropdown(
                     ref=ref,
                     label=self.tr(label_key),
                     value=self.view_model.get_config_value(config_key),
-                    width=width,
                     options=[ft.dropdown.Option(opt) for opt in dropdown_options],
-                    tooltip=self.tr(label_key + "_tooltip")
+                    tooltip=common_tooltip,
+                    expand=expand # Dropdown can expand horizontally
                 )
             elif is_checkbox:
-                return ft.Checkbox(
+                control = ft.Checkbox(
                     ref=ref,
                     label=self.tr(label_key),
                     value=self.view_model.get_config_value(config_key),
-                    tooltip=self.tr(label_key + "_tooltip")
+                    tooltip=common_tooltip
                 )
             else:
-                return ft.TextField(
+                control = ft.TextField(
                     ref=ref,
                     label=self.tr(label_key),
                     value=str(self.view_model.get_config_value(config_key)),
-                    width=width,
                     keyboard_type=keyboard_type,
                     password=is_password,
                     can_reveal_password=is_password,
                     expand=expand,
-                    tooltip=self.tr(label_key + "_tooltip")
+                    tooltip=common_tooltip
                 )
-        config_fields_row1 = [
-            (self.sing_ref_time_ref, 'singing_ref_time', 'sing_ref_time_label'),
-            (self.non_sing_ref_time_ref, 'non_singing_ref_time', 'non_sing_ref_time_label'),
-            (self.ref_duration_ref, 'ref_duration', 'ref_duration_label'),
+            # Wrap the control in a Container and apply column spans
+            return ft.Container(content=control, padding=ft.padding.only(right=5, bottom=5), col=col_spans)
+
+        # --- Define Config Controls within Responsive Rows ---
+        config_controls = [
+            # Row 1: Reference Times & Window
+            ft.ResponsiveRow([
+                make_config_field(self.sing_ref_time_ref, 'singing_ref_time', 'sing_ref_time_label', col_spans={"sm": 12, "md": 4}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.non_sing_ref_time_ref, 'non_singing_ref_time', 'non_sing_ref_time_label', col_spans={"sm": 12, "md": 4}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.analysis_window_seconds_ref, 'analysis_window_seconds', 'analysis_window_seconds_label', col_spans={"sm": 12, "md": 4}, keyboard_type=ft.KeyboardType.NUMBER),
+            ], alignment=ft.MainAxisAlignment.START),
+
+            # Row 2: Detection/Features & Grouping Weights
+            ft.ResponsiveRow([
+                make_config_field(self.hmm_threshold_ref, 'hmm_threshold', 'hmm_thresh_label', col_spans={"sm": 6, "md": 3}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.temporal_weight_ref, 'temporal_weight', 'temporal_weight_label', col_spans={"sm": 6, "md": 3}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.feature_weight_ref, 'feature_weight', 'feature_weight_label', col_spans={"sm": 6, "md": 3}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.max_time_gap_ref, 'max_time_gap', 'max_time_gap_label', col_spans={"sm": 6, "md": 3}, keyboard_type=ft.KeyboardType.NUMBER),
+            ], alignment=ft.MainAxisAlignment.START),
+
+             # Row 3: More Grouping & HPSS
+            ft.ResponsiveRow([
+                make_config_field(self.affinity_damping_ref, 'affinity_damping', 'affinity_damping_label', col_spans={"sm": 12, "md": 4}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.avg_song_duration_heuristic_sec_ref, 'avg_song_duration_heuristic_sec', 'avg_song_duration_heuristic_sec_label', col_spans={"sm": 12, "md": 4}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.enable_hpss_ref, 'enable_hpss', 'enable_hpss_checkbox', col_spans={"sm": 12, "md": 4}, is_checkbox=True),
+            ], alignment=ft.MainAxisAlignment.START),
+
+            # Row 4: Identification Durations & Model
+            ft.ResponsiveRow([
+                make_config_field(self.min_duration_for_id_ref, 'min_duration_for_id', 'min_id_dur_label', col_spans={"sm": 12, "md": 4}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.max_duration_for_id_ref, 'max_duration_for_id', 'max_id_dur_label', col_spans={"sm": 12, "md": 4}, keyboard_type=ft.KeyboardType.NUMBER),
+                make_config_field(self.whisper_model_ref, 'whisper_model', 'whisper_model_label', col_spans={"sm": 12, "md": 4}, is_dropdown=True, dropdown_options=["tiny", "base", "small", "medium", "large"]),
+            ], alignment=ft.MainAxisAlignment.START),
+
+            # Row 5: API Key
+            ft.ResponsiveRow([
+                make_config_field(self.api_key_ref, 'gemini_api_key', 'gemini_api_key_label', col_spans=12, is_password=True, expand=True),
+            ]),
+
+            # Row 6: Output Directory
+            ft.ResponsiveRow([
+                 make_config_field(self.output_dir_ref, 'output_dir', 'output_dir_label', col_spans={"sm": 12, "md": 9, "lg": 10}, keyboard_type=ft.KeyboardType.TEXT, expand=True),
+                 # Button needs its own container with col spans
+                 ft.Container(
+                    content=ft.ElevatedButton(
+                        self.tr("select_button"), ref=self.select_dir_button_ref,
+                        on_click=lambda _: self.directory_picker.get_directory_path(),
+                        tooltip=self.tr("select_button_tooltip")
+                    ),
+                    padding=ft.padding.only(top=5), # Add some padding to align button better
+                    col={"sm": 12, "md": 3, "lg": 2}
+                 )
+            ]),
+
+             # Row 7: Output Checkboxes
+             ft.ResponsiveRow([
+                 make_config_field(self.save_json_ref, 'save_results_json', 'save_json_checkbox', col_spans={"sm": 12, "md": 6}, is_checkbox=True),
+                 make_config_field(self.save_csv_ref, 'save_results_dataframe', 'save_csv_checkbox', col_spans={"sm": 12, "md": 6}, is_checkbox=True),
+             ], alignment=ft.MainAxisAlignment.START)
         ]
-        config_fields_row2 = [
-            (self.hmm_threshold_ref, 'hmm_threshold', 'hmm_thresh_label', 100),
-            (self.min_segment_duration_ref, 'min_segment_duration', 'min_seg_dur_label', 120),
-            (self.min_segment_gap_ref, 'min_segment_gap', 'min_seg_gap_label', 120),
-            (self.n_components_ref, 'n_components', 'pca_comp_label', 100),
-        ]
-        config_fields_row3 = [
-            (self.min_duration_for_id_ref, 'min_duration_for_id', 'min_id_dur_label', 120),
-        ]
+
         return ft.ExpansionPanelList(
             expand_icon_color=ft.colors.AMBER, elevation=4, divider_color=ft.colors.BLUE_GREY_100,
             controls=[
@@ -190,32 +253,14 @@ class AppView(ft.View):
                     header=ft.ListTile(title=ft.Text(self.tr("config_title"))),
                     content=ft.Container(
                         padding=ft.padding.only(left=15, right=15, bottom=10, top=10),
-                        content=ft.Column([
-                            ft.Row([
-                                *[make_config_field(ref, key, label) for ref, key, label in config_fields_row1]
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            ft.Row([
-                                *[make_config_field(ref, key, label, width) for ref, key, label, width in config_fields_row2]
-                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                            ft.Row([
-                                make_config_field(*config_fields_row3[0]),
-                                make_config_field(self.whisper_model_ref, 'whisper_model', 'whisper_model_label', 150, is_dropdown=True, dropdown_options=["tiny", "base", "small", "medium", "large"]),
-                                make_config_field(self.enable_hpss_ref, 'enable_hpss', 'enable_hpss_checkbox', is_checkbox=True),
-                                make_config_field(self.api_key_ref, 'gemini_api_key', 'gemini_api_key_label', expand=True, is_password=True),
-                            ]),
-                            ft.Row([
-                                make_config_field(self.output_dir_ref, 'output_dir', 'output_dir_label', expand=True),
-                                ft.ElevatedButton(
-                                    self.tr("select_button"), ref=self.select_dir_button_ref,
-                                    on_click=lambda _: self.directory_picker.get_directory_path(),
-                                    tooltip=self.tr("select_button_tooltip")
-                                )
-                            ]),
-                            ft.Row([
-                                make_config_field(self.save_json_ref, 'save_results_json', 'save_json_checkbox', is_checkbox=True),
-                                make_config_field(self.save_csv_ref, 'save_results_dataframe', 'save_csv_checkbox', is_checkbox=True),
-                            ], alignment=ft.MainAxisAlignment.START)
-                        ], spacing=10)
+                        expand=True,
+                        # Use the list of ResponsiveRows directly
+                        content=ft.Column(
+                            config_controls,
+                            spacing=5,
+                            scroll=ft.ScrollMode.ADAPTIVE,
+                            height=300
+                        )
                     )
                 )
             ]
@@ -338,7 +383,6 @@ class AppView(ft.View):
 
             # --- Enable/Disable Controls & Update Button Text ---
             if self.start_button_ref.current:
-                self.start_button_ref.current.disabled = is_running
                 self.start_button_ref.current.text = self.tr("stop_button") if is_running else self.tr("start_button")
                 self.start_button_ref.current.icon = ft.icons.STOP if is_running else ft.icons.PLAY_ARROW
                 self.start_button_ref.current.tooltip = self.tr("stop_button_tooltip") if is_running else self.tr("start_button_tooltip")
@@ -425,6 +469,24 @@ class AppView(ft.View):
             return msg
 
     # --- Callbacks & Config ---
+    def _get_numeric_from_ref(self, ref: ft.Ref, default: Any, is_float: bool = True) -> Any:
+        """Helper to safely get numeric value from a TextField Ref."""
+        if ref.current:
+            val_str = ref.current.value
+            try:
+                return float(val_str) if is_float else int(val_str)
+            except (ValueError, TypeError):
+                return default
+        return default
+
+    def _get_text_from_ref(self, ref: ft.Ref, default: str = '') -> str:
+        """Helper to safely get text value from a TextField Ref."""
+        return ref.current.value if ref.current and ref.current.value else default
+
+    def _get_bool_from_ref(self, ref: ft.Ref, default: bool = False) -> bool:
+        """Helper to safely get boolean value from a Checkbox Ref."""
+        return ref.current.value if ref.current else default
+
     def _start_analysis_clicked(self, e: Any) -> None:
         if self.view_model.is_analysis_running():
              print(self.tr("log_stop_requested"))
@@ -476,51 +538,46 @@ class AppView(ft.View):
                 self.page.update()
 
     def _get_config_from_ui(self) -> Dict[str, Any]:
-        """Gathers current configuration values from the UI controls."""
+        """Collects configuration values from the UI controls."""
         config = {}
-        def get_numeric(ref, default, is_float=True):
-             val_str = ref.current.value if ref.current else str(default)
-             label_key = ""
-             if ref == self.sing_ref_time_ref: label_key = "sing_ref_time_label"
-             elif ref == self.non_sing_ref_time_ref: label_key = "non_sing_ref_time_label"
-             elif ref == self.ref_duration_ref: label_key = "ref_duration_label"
-             elif ref == self.hmm_threshold_ref: label_key = "hmm_thresh_label"
-             elif ref == self.min_segment_duration_ref: label_key = "min_seg_dur_label"
-             elif ref == self.min_segment_gap_ref: label_key = "min_seg_gap_label"
-             elif ref == self.n_components_ref: label_key = "pca_comp_label"
-             elif ref == self.min_duration_for_id_ref: label_key = "min_id_dur_label"
-             else: label_key = ref.current.label if ref.current else "unknown_field"
-             try: return float(val_str) if is_float else int(val_str)
-             except (ValueError, TypeError):
-                 self._show_error_snackbar(self.tr("log_invalid_numeric", value=val_str, default=default, label=self.tr(label_key)))
-                 if ref.current: ref.current.value = str(default)
-                 if self.page: self.page.update()
-                 return default
+
+        # Input source determination
         source_type = self.source_type_ref.current.value if self.source_type_ref.current else "file"
-        config['file'] = self.file_path_ref.current.value if source_type == "file" and self.file_path_ref.current else None
-        config['url'] = self.url_ref.current.value if source_type == "url" and self.url_ref.current else None
-        config['output_dir'] = self.output_dir_ref.current.value if self.output_dir_ref.current else "."
-        config['singing_ref_time'] = get_numeric(self.sing_ref_time_ref, 10.0)
-        config['non_singing_ref_time'] = get_numeric(self.non_sing_ref_time_ref, 10.0)
-        config['ref_duration'] = get_numeric(self.ref_duration_ref, 2.0)
-        config['hmm_threshold'] = get_numeric(self.hmm_threshold_ref, 0.5)
-        config['min_segment_duration'] = get_numeric(self.min_segment_duration_ref, 5.0)
-        config['min_segment_gap'] = get_numeric(self.min_segment_gap_ref, 1.0)
-        config['n_components'] = get_numeric(self.n_components_ref, 4, is_float=False)
-        config['min_duration_for_id'] = get_numeric(self.min_duration_for_id_ref, 10.0)
-        config['whisper_model'] = self.whisper_model_ref.current.value if self.whisper_model_ref.current else "base"
-        config['enable_hpss'] = self.enable_hpss_ref.current.value if self.enable_hpss_ref.current else True
-        config['gemini_api_key'] = self.api_key_ref.current.value if self.api_key_ref.current else ""
-        config['save_results_json'] = self.save_json_ref.current.value if self.save_json_ref.current else False
-        config['save_results_dataframe'] = self.save_csv_ref.current.value if self.save_csv_ref.current else False
+        if source_type == "file":
+            config['file'] = self._get_text_from_ref(self.file_path_ref)
+            config['url'] = None
+        else:
+            config['file'] = None
+            config['url'] = self._get_text_from_ref(self.url_ref)
+
+        # Other config values
+        config['output_dir'] = self._get_text_from_ref(self.output_dir_ref, default="./output")
+        config['singing_ref_time'] = self._get_numeric_from_ref(self.sing_ref_time_ref, default=0.8, is_float=True)
+        config['non_singing_ref_time'] = self._get_numeric_from_ref(self.non_sing_ref_time_ref, default=0.8, is_float=True)
+        config['analysis_window_seconds'] = self._get_numeric_from_ref(self.analysis_window_seconds_ref, default=5, is_float=False)
+        config['hmm_threshold'] = self._get_numeric_from_ref(self.hmm_threshold_ref, default=0.7, is_float=True)
+        config['enable_hpss'] = self._get_bool_from_ref(self.enable_hpss_ref, default=False)
+        config['temporal_weight'] = self._get_numeric_from_ref(self.temporal_weight_ref, default=1.0, is_float=True)
+        config['feature_weight'] = self._get_numeric_from_ref(self.feature_weight_ref, default=1.0, is_float=True)
+        config['max_time_gap'] = self._get_numeric_from_ref(self.max_time_gap_ref, default=2.0, is_float=True)
+        config['affinity_damping'] = self._get_numeric_from_ref(self.affinity_damping_ref, default=0.9, is_float=True)
+        config['avg_song_duration_heuristic_sec'] = self._get_numeric_from_ref(self.avg_song_duration_heuristic_sec_ref, default=180, is_float=False)
+        config['min_duration_for_id'] = self._get_numeric_from_ref(self.min_duration_for_id_ref, default=30, is_float=False)
+        config['max_duration_for_id'] = self._get_numeric_from_ref(self.max_duration_for_id_ref, default=600, is_float=False)
+        config['whisper_model'] = self._get_text_from_ref(self.whisper_model_ref, default="base") # Assuming it's a dropdown/text
+        config['gemini_api_key'] = self._get_text_from_ref(self.api_key_ref)
+        config['save_results_json'] = self._get_bool_from_ref(self.save_json_ref, default=True)
+        config['save_results_dataframe'] = self._get_bool_from_ref(self.save_csv_ref, default=True)
+
+        print(f"UI Config Retrieved: {config}")
         return config
 
     def _show_error_snackbar(self, message: str) -> None:
-        if self.page:
-            snack_bar = ft.SnackBar(
-                content=ft.Text(message),
-                bgcolor=ft.colors.RED_400
-            )
-            self.page.snack_bar = snack_bar
-            self.page.snack_bar.open = True
-            self.page.update() 
+        if not self.page: return
+        snack_bar = ft.SnackBar(
+            content=ft.Text(message),
+            bgcolor=ft.colors.RED_400
+        )
+        self.page.snack_bar = snack_bar
+        self.page.snack_bar.open = True
+        self.page.update() 

@@ -17,8 +17,6 @@ class Segment:
     """Represents a detected segment with start and end times."""
     start: float
     end: float
-    # Optional: Add segment_index if useful later
-    # segment_index: int = -1 
 
     @property
     def duration(self) -> float:
@@ -37,6 +35,6 @@ class AnalysisResults:
     total_duration: Optional[float] = None
     final_segments: List[Segment] = field(default_factory=list) # List of detected singing segments
     # identification_results contains info for segments processed for ID (might be fewer than final_segments)
-    identification_results: List[SegmentIdentification] = field(default_factory=list) 
+    identification_results: List[SegmentIdentification] = field(default_factory=list)
     # Optional: Add raw pipeline output or other metadata if needed
     # raw_output: Optional[Dict[str, Any]] = None 

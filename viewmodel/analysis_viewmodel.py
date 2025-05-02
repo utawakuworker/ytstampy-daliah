@@ -20,19 +20,20 @@ CONFIG_FILE_PATH = "user_config.json"
 # --- Import Dataclasses ---
 try:
     from model.data_models import (AnalysisResults, Segment,
-                                   SegmentIdentification)
+                                   SegmentIdentification, SongIdentificationResult)
 except ImportError:
     import os
     import sys
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if project_root not in sys.path:
         sys.path.append(project_root)
-    from model.data_models import AnalysisResults, Segment, SegmentIdentification
+    from model.data_models import AnalysisResults, Segment, SegmentIdentification, SongIdentificationResult
 
 from model.analysis_pipeline import (SingingAnalysisOrchestrator,
                                      StatusReporter)
 from model.pipeline_steps import (AudioLoaderStep, FeatureExtractionStep,
                                   SaveResultsStep, SegmentDetectionStep,
+                                  SegmentGroupingStep,
                                   SegmentProcessingStep,
                                   SongIdentificationStep, VisualizationStep)
 
@@ -87,9 +88,10 @@ class AnalysisViewModel:
             AudioLoaderStep(self.config),
             FeatureExtractionStep(self.config),
             SegmentDetectionStep(self.config),
+            SegmentGroupingStep(self.config),
             SegmentProcessingStep(self.config),
             SongIdentificationStep(self.config),
-            VisualizationStep(self.config),      # Optional
+            # VisualizationStep(self.config),      # Optional - Disabled
             SaveResultsStep(self.config),        # Optional
         ]
         self.pipeline = SingingAnalysisOrchestrator(self.steps, self.reporter)
@@ -118,12 +120,8 @@ class AnalysisViewModel:
                 # Save only the current self.config (which includes user input)
                 json.dump(self.config, f, indent=4)
             print(f"ViewModel: Saved current config to {CONFIG_FILE_PATH}") # Debug log
-            # Optionally add success message to main log?
-            # self.log_messages.append(f"[INFO] Configuration saved to {CONFIG_FILE_PATH}")
         except (IOError, Exception) as e:
             print(f"Warning: Failed to save config to {CONFIG_FILE_PATH}: {e}")
-            # Optionally add error message to main log?
-            # self.log_messages.append(f"[ERROR] Failed to save configuration: {e}")
 
     # --- Existing Methods ---
     def _notify_view(self):
@@ -148,7 +146,6 @@ class AnalysisViewModel:
         print(f"ViewModel: Updating config '{key}' to '{value}'")
         self.config[key] = value
         # Consider if saving should happen here too, or only on start_analysis
-        # self._save_config_to_file() # Uncomment if you want immediate saving
 
     def update_full_config(self, new_config_values: Dict[str, Any]):
         """Updates the entire configuration dictionary (e.g., from GUI fields)."""
@@ -187,9 +184,10 @@ class AnalysisViewModel:
             AudioLoaderStep(current_config),
             FeatureExtractionStep(current_config),
             SegmentDetectionStep(current_config),
+            SegmentGroupingStep(current_config),
             SegmentProcessingStep(current_config),
             SongIdentificationStep(current_config),
-            VisualizationStep(current_config),
+            # VisualizationStep(current_config), # Disabled
             SaveResultsStep(current_config),
         ]
         self.pipeline = SingingAnalysisOrchestrator(self.steps, self.reporter)
@@ -216,9 +214,6 @@ class AnalysisViewModel:
                 if success:
                     self._analysis_just_completed = True
                     self._pipeline_status_update("Analysis completed successfully.")
-                # else: # Optionally set a failure status if not success
-                #     if not any("Pipeline Thread Error" in msg for msg in self.log_messages[-5:]): # Avoid double messages
-                #          self._pipeline_status_update("Analysis failed or stopped.")
                 self._notify_view()
 
         self.pipeline_thread = threading.Thread(target=run_in_thread, daemon=True)
@@ -237,16 +232,7 @@ class AnalysisViewModel:
         else:
              self.log_messages.append("[WARNING] Pipeline does not have a 'request_stop' method. Stopping may be delayed.")
 
-    def save_results(self):
-        """Triggers saving results using the completed pipeline instance."""
-        self._pipeline_status_update("SaveResultsStep is now part of the pipeline and runs automatically after analysis.")
-        self._notify_view()
-
-    def visualize_results(self):
-        """Visualization feature is disabled in the GUI."""
-        self._pipeline_status_update("VisualizationStep is now part of the pipeline and runs automatically after analysis.")
-        self._notify_view()
-
+    # --- Getter Methods for UI State ---
     def get_status_message(self) -> str:
         if self.is_running and self._start_time:
             elapsed = datetime.now() - self._start_time

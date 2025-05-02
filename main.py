@@ -2,7 +2,6 @@ import os
 import sys
 
 import flet as ft
-import lazy_loader  # noqa: F401 dummy import
 
 # Ensure the current directory is in the path to find sibling packages
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -34,6 +33,7 @@ def run_app(page: ft.Page):
     page.window.height = 1000
     # Optionally, make the window not resizable:
     # page.window.resizable = False
+    page.title = "YTStamps Revisited"
     page.update()
 
     # --- Theme Check (Comment out if you have custom themes) ---
@@ -82,12 +82,11 @@ def run_app(page: ft.Page):
     # This line assigns the created AppBar to the page's appbar property.
     # It MUST be executed for the AppBar to appear.
     page.appbar = ft.AppBar(
-        title=ft.Text(loc_manager.tr("app_title")), # Use initial language for title
+        # title=ft.Text(loc_manager.tr("app_title")), # Use initial language for title
         actions=[lang_dropdown], # Add the dropdown to the AppBar
-        # Optional: Force a visible background color for testing
-        # bgcolor=ft.colors.SURFACE_VARIANT
     )
     print(f"AppBar assigned. Actions count: {len(page.appbar.actions)}")
+    page.update()
 
     # ---> Explicit Update after AppBar assignment <---
     print("Attempting explicit page update after AppBar assignment...")
@@ -110,12 +109,6 @@ def run_app(page: ft.Page):
         page.views.clear()
         page.views.append(app_view_instance)
 
-        # Update page title in the existing AppBar
-        if page.appbar and page.appbar.title:
-             page.appbar.title.value = current_tr("app_title")
-             print("AppBar title updated.")
-        else:
-             print("Cannot update AppBar title - AppBar or title is None.")
         print("--- build_and_set_view finished ---")
 
     # --- Initial View Setup ---
